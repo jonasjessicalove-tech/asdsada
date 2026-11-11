@@ -298,6 +298,26 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
               </div>
             </div>
 
+            {/* Consultative Suitability Card (Para quem é ideal) */}
+            <div className="p-5 rounded-2xl bg-[#0B2B20] text-white border border-[#C8A251]/30 shadow-md space-y-2">
+              <div className="flex items-center gap-2 text-[#C8A251] text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Análise Consultiva de Perfil</span>
+              </div>
+              <h4 className="font-editorial text-lg font-bold text-white">
+                Para quem este imóvel faz mais sentido?
+              </h4>
+              <p className="text-xs sm:text-sm text-gray-200 leading-relaxed font-light">
+                {property.bedrooms >= 4 || property.area >= 350
+                  ? 'Perfeito para famílias que necessitam de amplitude, convivência privativa, área verde para crianças e pets, além de condomínio com segurança integral 24h.'
+                  : property.bedrooms === 2 && (property.description.toLowerCase().includes('estudante') || property.description.toLowerCase().includes('faculdade') || property.description.toLowerCase().includes('coworking'))
+                  ? 'Ideal para estudantes ou jovens profissionais que priorizam proximidade a faculdades, fácil acesso a estações de metrô e planta prática para morar ou dividir custos.'
+                  : property.description.toLowerCase().includes('home office') || property.description.toLowerCase().includes('garden')
+                  ? 'Indicado sob medida para quem trabalha em home office ou valoriza um refúgio silencioso, com jardim privativo e ruas arborizadas.'
+                  : 'Excelente para quem busca uma residência contemporânea com alto padrão de acabamento, localização nobre e liquidez patrimonial consolidada.'}
+              </p>
+            </div>
+
             {/* Full Description */}
             <div className="bg-white rounded-2xl border border-gray-200/90 p-6 sm:p-8 space-y-4 shadow-sm">
               <h3 className="font-editorial text-xl font-bold text-[#0B2B20] border-b border-gray-100 pb-3">

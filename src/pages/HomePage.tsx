@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { PropertyCard } from '../components/PropertyCard';
 import { FinancingSimulator } from '../components/FinancingSimulator';
-import { Property, LeadInterest } from '../types';
+import { SmartMatchingFinder } from '../components/SmartMatchingFinder';
+import { Property, LeadInterest, ClientProfile } from '../types';
+import { calculateSmartMatches, fetchAiSmartMatch } from '../lib/smartMatch';
 import {
   Search,
   Building,
@@ -12,7 +14,7 @@ import {
   ArrowRight,
   MessageCircle,
   Home,
-  CheckCircle,
+  CheckCircle2,
   MapPin,
   TrendingUp,
   KeyRound,
@@ -20,9 +22,13 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  Building2,
-  Pause,
-  Play
+  SlidersHorizontal,
+  RotateCcw,
+  Bot,
+  Compass,
+  HeartHandshake,
+  Play,
+  Pause
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { trackEvent } from '../lib/analytics';
@@ -36,352 +42,478 @@ interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal }) => {
   const { settings, properties, developments } = useSettings();
 
-  // Quick Search States
-  const [filterType, setFilterType] = useState<string>('todos');
-  const [filterPurpose, setFilterPurpose] = useState<string>('venda');
-  const [filterLocation, setFilterLocation] = useState<string>('');
+  // Client-Centric Matching Profile State
+  const [profile, setProfile] = useState<ClientProfile>({});
+  const [showTechnicalFilters, setShowTechnicalFilters] = useState<boolean>(false);
 
-  const featuredProperties = properties.filter((p) => p.published && p.featured);
-  const showcaseProperties = featuredProperties.length > 0 ? featuredProperties : properties.filter((p) => p.published);
+  // Technical Filter Overrides
+  const [techPurpose, setTechPurpose] = useState<string>('todos');
+  const [techType, setTechType] = useState<string>('todos');
+  const [techBedrooms, setTechBedrooms] = useState<number>(0);
 
-  const cleanWhatsapp = (settings.whatsapp || '').replace(/\D/g, '');
-  const directWhatsappUrl = `https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(
-    'Olá Sávio! Acessei o site oficial e gostaria de conversar sobre oportunidades imobiliárias.'
-  )}`;
+  const resultsRef = useRef<HTMLDivElement>(null);
 
-  const handleQuickSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const params = new URLSearchParams();
-    if (filterPurpose && filterPurpose !== 'todos') params.set('finalidade', filterPurpose);
-    if (filterType && filterType !== 'todos') params.set('tipo', filterType);
-    if (filterLocation.trim()) params.set('busca', filterLocation.trim());
-    navigate(`/imoveis?${params.toString()}`);
+  const handleUpdateProfile = (updated: Partial<ClientProfile>) => {
+    setProfile((prev) => ({ ...prev, ...updated }));
   };
 
-  // Dynamic Hero Slides from Developments and Properties
-  const heroSlides = React.useMemo(() => {
-    const list: Array<{
+  const handleResetProfile = () => {
+    setProfile({});
+    setTechPurpose('todos');
+    setTechType('todos');
+    setTechBedrooms(0);
+  };
+
+  const scrollToResults = () => {
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Real-time Client-Centric Matching
+  const { results: smartMatchedResults, personalizedSummary } = useMemo(() => {
+    return calculateSmartMatches(properties, profile);
+  }, [properties, profile]);
+
+  // Apply optional technical overrides if activated
+  const displayProperties = useMemo(() => {
+    return smartMatchedResults.filter((item) => {
+      const p = item.property;
+      if (techPurpose !== 'todos' && p.negotiationType !== techPurpose) return false;
+      if (techType !== 'todos' && p.propertyType !== techType) return false;
+      if (techBedrooms > 0 && p.bedrooms < techBedrooms) return false;
+      return true;
+    });
+  }, [smartMatchedResults, techPurpose, techType, techBedrooms]);
+
+  // Hero Background Slideshow with Real Estate Photos
+  const [currentSlide, setCurrentSlide] = useState<number>(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState<boolean>(true);
+
+  const heroSlides = useMemo(() => {
+    const list: {
+      id: string;
       image: string;
       title: string;
-      location: string;
-      tag: string;
-      area: string;
-      link: string;
-      slug?: string;
-    }> = [];
+      subtitle: string;
+      tag?: string;
+    }[] = [];
 
-    // Add developments
-    developments.forEach((dev) => {
-      if (dev.images && dev.images.length > 0) {
+    // Prioritize high-quality property photos
+    properties.forEach((prop) => {
+      const img = prop.mainImage || (prop.gallery && prop.gallery[0]);
+      if (img && list.length < 8) {
         list.push({
-          image: dev.images[0],
-          title: dev.name,
-          location: `${dev.neighborhood}, ${dev.city} • ${dev.developer}`,
-          tag: dev.status === 'lancamento' ? 'Lançamento Exclusivo' : 'Empreendimento de Luxo',
-          area: dev.typologies || 'Plantas Exclusivas',
-          link: '/lancamentos',
+          id: `prop-${prop.id}`,
+          image: img,
+          title: prop.title,
+          subtitle: `${prop.neighborhood}, ${prop.city}`,
+          tag: prop.negotiationType === 'aluguel' ? 'Locação Premium' : 'Venda Exclusiva'
         });
       }
     });
 
-    // Add properties
-    properties.filter((p) => p.published).forEach((prop) => {
-      list.push({
-        image: prop.mainImage,
-        title: prop.title,
-        location: `${prop.neighborhood}, ${prop.city}`,
-        tag: prop.propertyType === 'casa' ? 'Mansão de Alto Padrão' : prop.propertyType === 'cobertura' ? 'Cobertura Nobre' : 'Residência Selecionada',
-        area: `${prop.area} m² • ${prop.bedrooms} quartos`,
-        link: `/imovel/${prop.slug}`,
-        slug: prop.slug,
-      });
+    // Also include development photos
+    developments.forEach((dev) => {
+      const img = dev.images && dev.images[0];
+      if (img && list.length < 10) {
+        list.push({
+          id: `dev-${dev.id}`,
+          image: img,
+          title: dev.name,
+          subtitle: `${dev.neighborhood}, ${dev.city}`,
+          tag: 'Empreendimento'
+        });
+      }
     });
 
-    // Fallback if empty
+    // Fallbacks if no properties loaded yet
     if (list.length === 0) {
-      list.push({
-        image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=85',
-        title: 'Mansão Contemporânea com Borda Infinita',
-        location: 'Alphaville, São Paulo',
-        tag: 'Destaque Residencial',
-        area: '980 m² • 5 suítes',
-        link: '/imoveis',
-      });
+      list.push(
+        {
+          id: 'fb-1',
+          image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2000&q=80',
+          title: 'Residencial Alphaville Classic',
+          subtitle: 'Alphaville, Barueri • SP',
+          tag: 'Mansão de Luxo'
+        },
+        {
+          id: 'fb-2',
+          image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=80',
+          title: 'Villa Botanique Jardins',
+          subtitle: 'Jardins, São Paulo • SP',
+          tag: 'Design Assinado'
+        },
+        {
+          id: 'fb-3',
+          image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=2000&q=80',
+          title: 'Penthouse Parque Ibirapuera',
+          subtitle: 'Vila Nova Conceição, SP',
+          tag: 'Vista Panorâmica'
+        }
+      );
     }
 
     return list;
-  }, [developments, properties]);
+  }, [properties, developments]);
 
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-
-  // Automatic slide rotation every 5 seconds
+  // Slideshow auto-rotation interval
   useEffect(() => {
-    if (heroSlides.length <= 1 || !isAutoPlaying) return;
+    if (!isAutoPlaying || heroSlides.length <= 1) return;
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
-    }, 5000);
+    }, 5500);
     return () => clearInterval(interval);
-  }, [heroSlides.length, isAutoPlaying]);
+  }, [isAutoPlaying, heroSlides.length]);
 
-  const activeHeroSlide = heroSlides[currentSlide] || heroSlides[0];
+  const currentSlideData = heroSlides[currentSlide] || heroSlides[0];
+
+  const cleanWhatsapp = (settings.whatsapp || '').replace(/\D/g, '');
+  const directWhatsappUrl = `https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(
+    'Olá Sávio! Gostaria de conversar sobre uma consultoria imobiliária personalizada.'
+  )}`;
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A2621]">
-      {/* 1. CINEMATIC HERO (TFT CORRETOR IMOBILIÁRIO STYLE) */}
-      <section className="relative min-h-[90vh] lg:min-h-[94vh] flex items-center justify-center bg-[#071C15] overflow-hidden -mt-4 text-white">
-        {/* Background Image Slideshow with overlay */}
-        <div className="absolute inset-0 z-0">
+      {/* 1. HERO WITH REAL ESTATE PHOTOS TRANSITION & CONVERSATIONAL FINDER */}
+      <section className="relative pt-32 pb-24 px-4 sm:px-6 lg:px-8 bg-[#071C15] text-white overflow-hidden min-h-[85vh] flex flex-col justify-center">
+        {/* CINEMATIC BACKGROUND SLIDESHOW WITH SMOOTH TRANSITIONS */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
           <AnimatePresence mode="sync">
-            <motion.div
-              key={activeHeroSlide?.image || currentSlide}
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 1.2, ease: 'easeInOut' }}
-              className="absolute inset-0 w-full h-full"
-            >
-              <img
-                src={activeHeroSlide?.image}
-                alt={activeHeroSlide?.title}
-                className="w-full h-full object-cover"
-              />
-            </motion.div>
+            {currentSlideData && (
+              <motion.div
+                key={currentSlideData.id}
+                initial={{ opacity: 0, scale: 1.15, filter: 'brightness(0.65) blur(3px)' }}
+                animate={{ opacity: 1, scale: 1.0, filter: 'brightness(0.85) blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.96, filter: 'brightness(0.5)' }}
+                transition={{ duration: 1.5, ease: [0.25, 1, 0.5, 1] }}
+                className="absolute inset-0 w-full h-full"
+              >
+                <img
+                  src={currentSlideData.image}
+                  alt={currentSlideData.title}
+                  className="w-full h-full object-cover object-center"
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
 
-          {/* Deep Forest Green gradient scrim for contrast */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#071C15] via-[#071C15]/90 to-[#071C15]/60 z-10" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#071C15] via-transparent to-black/40 z-10" />
+          {/* Luxury scrim layers for perfect typography contrast and readability */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#071C15]/90 via-[#071C15]/80 to-[#071C15]/95" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(11,43,32,0.45)_0%,rgba(7,28,21,0.92)_85%)]" />
+          <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#C8A251_1px,transparent_1px)] [background-size:28px_28px]" />
+          
+          {/* Bottom smooth fade into the page background */}
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#F8F9FA] to-transparent z-10" />
         </div>
 
-        {/* Hero Content Container */}
-        <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-28 w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            {/* Left Column: Presentation & Copy */}
-            <div className="lg:col-span-7 space-y-6 text-left">
-              {/* Kicker with · separators */}
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#C8A251]">
-                <span>Imóveis com Sávio</span>
-                <span aria-hidden="true" className="text-gray-400">·</span>
-                <span>Assessoria Imobiliária</span>
-                <span aria-hidden="true" className="text-gray-400">·</span>
-                <span>Alto Padrão</span>
+        <div className="max-w-6xl mx-auto relative z-10 text-center space-y-6 mb-8 mt-4">
+          {/* Badge de Posicionamento */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#C8A251]/20 border border-[#C8A251]/40 text-[#C8A251] text-xs font-bold uppercase tracking-widest backdrop-blur-md shadow-lg">
+            <HeartHandshake className="w-4 h-4 text-[#C8A251]" />
+            <span>Busca Imobiliária Centrada no Cliente</span>
+          </div>
+
+          {/* Main Headline */}
+          <h1 className="font-editorial text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white leading-[1.15] text-balance max-w-4xl mx-auto drop-shadow-md">
+            Aqui a gente não te joga um monte de filtros. A gente entende o que você realmente precisa.
+          </h1>
+
+          {/* Subtitle */}
+          <p className="text-sm sm:text-lg text-gray-200 max-w-2xl mx-auto leading-relaxed font-light drop-shadow">
+            Esqueça as buscas mecânicas de catálogo. Conte para nós quem vai morar, seu estilo de vida e rotina. Nossa inteligência conecta você aos imóveis com real afinidade.
+          </p>
+
+          {/* Property Slideshow Controls & Info Indicator */}
+          {heroSlides.length > 1 && (
+            <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-4 pt-1">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-[#C8A251]/30 text-xs text-gray-200 shadow-md">
+                <span className="w-2 h-2 rounded-full bg-[#C8A251] animate-pulse" />
+                <span className="text-[#C8A251] font-semibold">{currentSlideData?.tag || 'Destaque'}:</span>
+                <span className="font-medium text-white max-w-[180px] sm:max-w-xs truncate">{currentSlideData?.title}</span>
+                <span className="text-gray-400">({currentSlide + 1}/{heroSlides.length})</span>
               </div>
 
-              {/* Headline */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white leading-[1.12] font-editorial text-balance">
-                Seu próximo endereço começa com uma boa escolha.
-              </h1>
-
-              {/* Subtitle */}
-              <p className="text-base sm:text-lg text-gray-300 leading-relaxed max-w-2xl font-light">
-                Comprar, vender ou alugar um imóvel merece atenção aos detalhes. Conte com atendimento consultivo, transparência jurídica e acompanhamento dedicado em cada etapa.
-              </p>
-
-              {/* Primary Actions Row */}
-              <div className="pt-2 flex flex-wrap items-center gap-3">
+              {/* Navigation Controls */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/15 shadow-md">
                 <button
-                  onClick={() => navigate('/imoveis')}
-                  className="px-6 py-3.5 text-xs uppercase tracking-wider font-semibold text-[#0B2B20] bg-[#C8A251] hover:bg-[#D4AF37] rounded-md transition-all shadow-lg hover:shadow-xl active:scale-95 cursor-pointer"
+                  type="button"
+                  onClick={() => setCurrentSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)}
+                  aria-label="Foto anterior"
+                  className="p-1 rounded-full hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
                 >
-                  Encontrar meu imóvel
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
 
-                <button
-                  onClick={() => onOpenLeadModal(undefined, 'vender')}
-                  className="px-6 py-3.5 text-xs uppercase tracking-wider font-semibold text-white bg-transparent hover:bg-white/10 border border-white/40 rounded-md transition-all active:scale-95 cursor-pointer"
-                >
-                  Quero vender meu imóvel
-                </button>
-
-                <a
-                  href={directWhatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 text-xs uppercase tracking-wider font-semibold text-white bg-[#25D366] hover:bg-[#20BA5A] rounded-md transition-all shadow-md active:scale-95"
-                >
-                  <MessageCircle className="w-4 h-4 fill-current" />
-                  <span>Falar com Sávio</span>
-                </a>
-              </div>
-
-              {/* Sub-bar: Institutional Quote & Marker */}
-              <div className="pt-6 border-t border-white/15 flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-gray-300">
-                <span className="italic text-[#E2C481]">
-                  “Um bom negócio começa com informação clara e termina com confiança.”
-                </span>
-                <span className="text-gray-400">·</span>
-                <span className="text-gray-300">Atendimento Consultivo Direto</span>
-              </div>
-            </div>
-
-            {/* Right Column: Featured Showcase Card */}
-            <div className="lg:col-span-5">
-              <div
-                onClick={() => navigate(activeHeroSlide.link)}
-                className="group cursor-pointer rounded-2xl bg-black/40 hover:bg-black/60 border border-white/20 p-6 backdrop-blur-md shadow-2xl transition-all duration-300 transform hover:-translate-y-1 text-left"
-              >
-                <div className="flex items-center justify-between text-xs mb-3">
-                  <span className="px-2.5 py-1 rounded bg-[#C8A251] text-[#0B2B20] font-bold text-[10px] uppercase tracking-wider">
-                    {activeHeroSlide.tag}
-                  </span>
-                  <span className="text-gray-300 text-[11px] font-mono flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-[#C8A251]" />
-                    <span>Empreendimento em Destaque</span>
-                  </span>
-                </div>
-
-                <div className="relative aspect-[16/10] rounded-xl overflow-hidden mb-4 border border-white/10 bg-slate-900">
-                  <img
-                    src={activeHeroSlide.image}
-                    alt={activeHeroSlide.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-
-                  {/* Watermark Logo */}
-                  {settings.logoUrl && (
-                    <div className="absolute bottom-3 right-3 opacity-90 pointer-events-none select-none z-10 transition-opacity filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]">
-                      <img
-                        src={settings.logoUrl}
-                        alt="Marca d'água"
-                        className="w-20 sm:w-24 h-auto object-contain"
-                      />
-                    </div>
-                  )}
-
-                  <div className="absolute bottom-3 left-3 right-3 text-white">
-                    <p className="text-xs text-[#C8A251] font-semibold">{activeHeroSlide.location}</p>
-                    <h4 className="text-base font-bold font-editorial line-clamp-1">{activeHeroSlide.title}</h4>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <div>
-                    <span className="text-[11px] text-gray-400 block">Diferenciais</span>
-                    <span className="text-xs font-semibold text-white">{activeHeroSlide.area}</span>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#C8A251] group-hover:text-white transition">
-                    <span>Conhecer detalhes</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </span>
-                </div>
-              </div>
-
-              {/* Slide Carousel Controls */}
-              <div className="mt-6 pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsAutoPlaying(!isAutoPlaying)}
-                    className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition text-xs flex items-center gap-1 cursor-pointer"
-                    title={isAutoPlaying ? 'Pausar rotação' : 'Iniciar rotação'}
-                  >
-                    {isAutoPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                  </button>
-                  <span className="text-xs text-gray-300">
-                    Imóvel {currentSlide + 1} de {heroSlides.length}: <strong className="text-white">{activeHeroSlide.title}</strong>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 px-1">
                   {heroSlides.map((_, idx) => (
                     <button
+                      type="button"
                       key={idx}
                       onClick={() => setCurrentSlide(idx)}
+                      aria-label={`Ver foto ${idx + 1}`}
                       className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                        idx === currentSlide ? 'w-8 bg-[#C8A251]' : 'w-2 bg-white/30 hover:bg-white/60'
+                        idx === currentSlide ? 'w-5 bg-[#C8A251]' : 'w-1.5 bg-white/40 hover:bg-white/80'
                       }`}
-                      aria-label={`Slide ${idx + 1}`}
                     />
                   ))}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentSlide((prev) => (prev + 1) % heroSlides.length)}
+                  aria-label="Próxima foto"
+                  className="p-1 rounded-full hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAutoPlaying((prev) => !prev)}
+                  aria-label={isAutoPlaying ? "Pausar apresentação" : "Continuar apresentação"}
+                  className="p-1 ml-0.5 rounded-full hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title={isAutoPlaying ? "Pausar rotação automática" : "Iniciar rotação automática"}
+                >
+                  {isAutoPlaying ? <Pause className="w-3 h-3 text-[#C8A251]" /> : <Play className="w-3 h-3 text-[#C8A251]" />}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 2. THE SMART MATCHING FINDER ENGINE (Prominent Central Card) */}
+        <div className="relative z-20">
+          <SmartMatchingFinder
+            profile={profile}
+            onChangeProfile={handleUpdateProfile}
+            onReset={handleResetProfile}
+            totalMatches={displayProperties.length}
+            onScrollToResults={scrollToResults}
+          />
+        </div>
+      </section>
+
+      {/* 3. "COMO FUNCIONA O MATCHING CONSULTIVO" (Visual 3-Step Process) */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto text-center">
+        <span className="text-xs font-bold uppercase tracking-widest text-[#0B2B20] block mb-2">
+          Experiência Invertida
+        </span>
+        <h2 className="font-editorial text-2xl sm:text-4xl font-bold text-[#0B2B20] mb-3">
+          Como Funciona o Matching Personalizado?
+        </h2>
+        <p className="text-sm text-gray-600 max-w-xl mx-auto mb-12">
+          Uma consultoria digital pensada para poupar seu tempo e eliminar visitas a imóveis que não têm nada a ver com você.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+          <div className="bg-white rounded-2xl p-6 sm:p-7 border border-gray-200/90 shadow-sm relative space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[#0B2B20] text-[#C8A251] font-bold text-lg flex items-center justify-center font-editorial">
+              1
+            </div>
+            <h3 className="font-editorial text-lg font-bold text-[#0B2B20]">
+              Você conta seu momento real de vida
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed font-light">
+              Se é estudante procurando dividir apê, jovem casal precisando de home office acústico ou família buscando segurança e quintal para os filhos.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-6 sm:p-7 border border-gray-200/90 shadow-sm relative space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[#0B2B20] text-[#C8A251] font-bold text-lg flex items-center justify-center font-editorial">
+              2
+            </div>
+            <h3 className="font-editorial text-lg font-bold text-[#0B2B20]">
+              Nossa IA cruza mobilidade, rotina e estilo
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed font-light">
+              Avaliamos proximidade a faculdades, estações de metrô, isolamento acústico, espaços de convivência e condomínio, ranqueando a compatibilidade real.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl p-6 sm:p-7 border border-gray-200/90 shadow-sm relative space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[#0B2B20] text-[#C8A251] font-bold text-lg flex items-center justify-center font-editorial">
+              3
+            </div>
+            <h3 className="font-editorial text-lg font-bold text-[#0B2B20]">
+              Você visita apenas com alto índice de match
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed font-light">
+              Cada imóvel vem acompanhado de uma justificativa clara de por que ele combina com você, além de contato prioritário com o corretor Sávio.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. REAL-TIME MATCHING RESULTS SECTION */}
+      <section ref={resultsRef} className="py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
+        {/* Dynamic Personalized Diagnosis Banner */}
+        <div className="p-6 sm:p-8 rounded-3xl bg-white border border-[#C8A251]/40 shadow-md mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#0B2B20] uppercase tracking-wider">
+              <span className="p-1 rounded-md bg-[#0B2B20] text-[#C8A251]">
+                <Sparkles className="w-3.5 h-3.5" />
+              </span>
+              <span>Diagnóstico de Matching em Tempo Real</span>
+            </div>
+            <h2 className="font-editorial text-2xl sm:text-3xl font-bold text-[#0B2B20]">
+              {personalizedSummary}
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 font-light">
+              Mostrando <strong className="font-bold text-[#0B2B20]">{displayProperties.length}</strong> {displayProperties.length === 1 ? 'imóvel ordenado por afinidade' : 'imóveis ordenados pelo maior índice de compatibilidade'}.
+            </p>
+          </div>
+
+          {/* Toggle Technical Filters */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowTechnicalFilters(!showTechnicalFilters)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#F8F9FA] hover:bg-gray-100 text-xs font-semibold text-[#0B2B20] border border-gray-300 transition-colors"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-[#C8A251]" />
+              <span>{showTechnicalFilters ? 'Ocultar Filtros Técnicos' : 'Filtros Técnicos Tradicionais'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Secondary Technical Filters (Optional fine tuning) */}
+        {showTechnicalFilters && (
+          <div className="bg-white rounded-2xl p-5 mb-8 border border-gray-200/90 shadow-sm space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 text-xs font-semibold text-gray-700">
+              <span>Filtros Técnicos Secundários</span>
+              <button
+                onClick={() => {
+                  setTechPurpose('todos');
+                  setTechType('todos');
+                  setTechBedrooms(0);
+                }}
+                className="text-gray-500 hover:text-[#0B2B20] underline text-[11px]"
+              >
+                Limpar filtros técnicos
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
+                  Finalidade
+                </label>
+                <select
+                  value={techPurpose}
+                  onChange={(e) => setTechPurpose(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#F8F9FA] border border-gray-300 text-xs text-[#1A2621] outline-none focus:border-[#0B2B20]"
+                >
+                  <option value="todos">Todas as finalidades</option>
+                  <option value="venda">Apenas Venda</option>
+                  <option value="aluguel">Apenas Locação</option>
+                  <option value="lancamento">Apenas Lançamentos</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
+                  Tipo de Imóvel
+                </label>
+                <select
+                  value={techType}
+                  onChange={(e) => setTechType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#F8F9FA] border border-gray-300 text-xs text-[#1A2621] outline-none focus:border-[#0B2B20]"
+                >
+                  <option value="todos">Todos os tipos</option>
+                  <option value="apartamento">Apartamentos</option>
+                  <option value="casa">Casas & Mansões</option>
+                  <option value="cobertura">Coberturas</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-1">
+                  Mínimo de Quartos
+                </label>
+                <select
+                  value={techBedrooms}
+                  onChange={(e) => setTechBedrooms(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl bg-[#F8F9FA] border border-gray-300 text-xs text-[#1A2621] outline-none focus:border-[#0B2B20]"
+                >
+                  <option value={0}>Sem mínimo</option>
+                  <option value={1}>1+ quarto</option>
+                  <option value={2}>2+ quartos</option>
+                  <option value={3}>3+ quartos</option>
+                  <option value={4}>4+ quartos</option>
+                </select>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        )}
 
-      {/* 2. FLOATING QUICK SEARCH (TFT STYLE - WHITE CARD -MT-16) */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 relative z-20">
-        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200/90 p-6 lg:p-8 backdrop-blur-md text-left">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-[#0B2B20] font-editorial flex items-center gap-2">
-              <Search className="w-5 h-5 text-[#C8A251]" />
-              <span>Buscar Imóveis Disponíveis</span>
-            </h2>
-            <span className="text-xs text-gray-500 hidden sm:inline">
-              Filtros integrados ao catálogo em tempo real
-            </span>
+        {/* PROPERTY CARDS GRID WITH MATCHING BADGES & CONTEXTUAL PHRASES */}
+        {displayProperties.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {displayProperties.map((item) => (
+              <PropertyCard
+                key={item.property.id}
+                property={item.property}
+                matchScore={item.score}
+                badgeLabel={item.badgeLabel}
+                matchReason={item.matchReason}
+                keyHighlights={item.keyHighlights}
+                onSelect={(slug) => navigate(`/imovel/${slug}`)}
+                onOpenLeadModal={(p) => onOpenLeadModal(p, 'visita')}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center max-w-xl mx-auto space-y-4 shadow-sm">
+            <Home className="w-12 h-12 text-gray-400 mx-auto" />
+            <h3 className="font-editorial text-xl font-bold text-[#0B2B20]">
+              Nenhum imóvel atingiu os critérios selecionados
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Você pode relaxar os filtros ou conversar diretamente com Sávio para captação sob medida.
+            </p>
+            <button
+              onClick={handleResetProfile}
+              className="px-6 py-2.5 rounded-xl bg-[#0B2B20] text-[#C8A251] font-bold text-xs uppercase tracking-wider hover:bg-[#133F30] transition-colors"
+            >
+              Restaurar Todas as Opções
+            </button>
+          </div>
+        )}
+
+        {/* "CONTINUAR CONVERSANDO COM A IA" BANNER */}
+        <div className="mt-14 p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#0B2B20] via-[#0D3628] to-[#071C15] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-xl">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C8A251]/20 text-[#C8A251] text-xs font-bold uppercase tracking-wider">
+              <Bot className="w-3.5 h-3.5" />
+              <span>Refine com Sofia • Consultora IA</span>
+            </div>
+            <h3 className="font-editorial text-xl sm:text-2xl font-bold text-white">
+              Quer uma sugestão ainda mais precisa?
+            </h3>
+            <p className="text-xs text-gray-300 font-light leading-relaxed">
+              Abra a assistente virtual Sofia no canto inferior esquerdo ou nos chame no WhatsApp para uma curadoria humana 100% personalizada.
+            </p>
           </div>
 
-          <form onSubmit={handleQuickSearch} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                Finalidade
-              </label>
-              <select
-                value={filterPurpose}
-                onChange={(e) => setFilterPurpose(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B2B20] text-gray-800"
-              >
-                <option value="todos">Todas as finalidades</option>
-                <option value="venda">Comprar (Venda)</option>
-                <option value="aluguel">Alugar (Locação)</option>
-                <option value="lancamento">Lançamentos</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                Tipo de Imóvel
-              </label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B2B20] text-gray-800"
-              >
-                <option value="todos">Todos os tipos</option>
-                <option value="casa">Casas & Mansões</option>
-                <option value="apartamento">Apartamentos</option>
-                <option value="cobertura">Coberturas</option>
-                <option value="terreno">Terrenos em Condomínio</option>
-                <option value="comercial">Comercial</option>
-              </select>
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                Bairro ou Cidade
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: Alphaville, Jardins, Itaim, Belo Horizonte..."
-                value={filterLocation}
-                onChange={(e) => setFilterLocation(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0B2B20] text-gray-800 placeholder:text-gray-400"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="submit"
-                className="w-full flex items-center justify-center gap-2 bg-[#0B2B20] hover:bg-[#134636] text-white font-semibold py-2.5 rounded-lg text-sm transition-all shadow-md active:scale-95 cursor-pointer"
-              >
-                <Search className="w-4 h-4 text-[#C8A251]" />
-                <span>Buscar Imóveis</span>
-              </button>
-            </div>
-          </form>
+          <div className="flex items-center gap-3 shrink-0">
+            <a
+              href={directWhatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BA5A] text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md"
+            >
+              <MessageCircle className="w-4 h-4 fill-white" />
+              <span>Chamar no WhatsApp</span>
+            </a>
+          </div>
         </div>
       </section>
 
-      {/* 3. NUMBERS & CREDIBILITY STRIP */}
-      <section className="py-12 mt-12 bg-[#F1F4F2] border-y border-gray-200/80">
+      {/* 5. NUMBERS & CREDIBILITY STRIP */}
+      <section className="py-12 bg-[#F1F4F2] border-y border-gray-200/80 my-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-center">
             <div className="p-4 border-r border-gray-300/80 last:border-none">
               <span className="font-editorial text-3xl sm:text-4xl font-bold text-[#0B2B20] block mb-1">
-                <NumberTicker value={properties.length > 0 ? properties.length : 24} />+
+                <NumberTicker value={properties.length > 0 ? properties.length : 8} />+
               </span>
               <span className="text-xs uppercase tracking-wider text-gray-600 font-medium">
                 Imóveis Catalogados
@@ -392,15 +524,15 @@ export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal })
                 <NumberTicker value={100} />%
               </span>
               <span className="text-xs uppercase tracking-wider text-gray-600 font-medium">
-                Atendimento Personalizado
+                Atendimento Consultivo
               </span>
             </div>
             <div className="p-4 border-r border-gray-300/80 last:border-none">
               <span className="font-editorial text-3xl sm:text-4xl font-bold text-[#0B2B20] block mb-1">
-                Segurança
+                Zero
               </span>
               <span className="text-xs uppercase tracking-wider text-gray-600 font-medium">
-                Assessoria Jurídica Rigorosa
+                Filtros Frios Obrigatórios
               </span>
             </div>
             <div className="p-4">
@@ -415,45 +547,9 @@ export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal })
         </div>
       </section>
 
-      {/* 4. FEATURED PROPERTIES (OPORTUNIDADES SELECIONADAS) */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-left">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-widest text-[#C8A251] block mb-2">
-              Oportunidades Selecionadas
-            </span>
-            <h2 className="text-2xl sm:text-4xl font-bold text-[#0B2B20] font-editorial text-balance">
-              Imóveis que podem ser o começo de uma nova história.
-            </h2>
-            <p className="text-sm text-gray-600 mt-2 max-w-xl">
-              Propriedades singulares que combinam localização nobre, acabamento impecável e valorização patrimonial garantida.
-            </p>
-          </div>
-
-          <button
-            onClick={() => navigate('/imoveis')}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0B2B20] hover:text-[#C8A251] transition-colors whitespace-nowrap self-start md:self-auto cursor-pointer"
-          >
-            <span>Ver todos os imóveis</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {showcaseProperties.slice(0, 6).map((property) => (
-            <PropertyCard
-              key={property.id}
-              property={property}
-              onSelect={(slug) => navigate(`/imovel/${slug}`)}
-              onOpenLeadModal={(p) => onOpenLeadModal(p, 'visita')}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* 5. DEVELOPMENTS HIGHLIGHT (LANÇAMENTOS) */}
+      {/* 6. DEVELOPMENTS (LANÇAMENTOS) */}
       {developments.length > 0 && (
-        <section className="py-20 bg-[#071C15] text-white border-y border-[#153D2F] text-left">
+        <section className="py-20 bg-[#071C15] text-white border-y border-[#153D2F]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
               <div>
@@ -528,8 +624,8 @@ export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal })
         </section>
       )}
 
-      {/* 6. BROKER PRESENTATION & ABOUT SÁVIO (TFT STYLE - 01 · APRESENTAÇÃO & COMPROMISSO) */}
-      <section className="bg-[#0B2B20] text-white py-20 relative overflow-hidden text-left">
+      {/* 7. BROKER PRESENTATION & ABOUT SÁVIO */}
+      <section className="bg-[#0B2B20] text-white py-20 relative overflow-hidden">
         <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-[#0D3628] to-transparent opacity-60 pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -559,10 +655,10 @@ export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal })
             {/* Text Content */}
             <div className="lg:col-span-7 space-y-6">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#C8A251]">
-                <span>01 · Apresentação & Compromisso</span>
+                <span>01 · Atendimento Humano & Consultivo</span>
               </div>
               <h2 className="font-editorial text-3xl sm:text-4xl font-bold text-white leading-tight">
-                Mais que intermediar imóveis, conectamos você à sua melhor conquista.
+                Mais que intermediar imóveis, entendemos quem você é para encontrar seu lugar no mundo.
               </h2>
               <p className="text-base text-gray-300 leading-relaxed font-light">
                 {settings.aboutExperience || 'A assessoria imobiliária de alto padrão exige discrição, transparência jurídica e profundo conhecimento de mercado. Conduzimos cada negociação com rigor técnico, garantindo uma experiência tranquila e segura.'}
@@ -626,95 +722,14 @@ export const HomePage: React.FC<HomePageProps> = ({ navigate, onOpenLeadModal })
         </div>
       </section>
 
-      {/* 7. FINANCING SIMULATOR (FULL TFT EMBED WITH 5 OFFICIAL BANKS) */}
+      {/* 8. FINANCING SIMULATOR */}
       <section className="bg-gray-100/70 py-20 border-y border-gray-200/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <FinancingSimulator />
         </div>
       </section>
 
-      {/* 8. CLIENT SERVICES / CONSULTORIA SOB MEDIDA */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <span className="text-xs font-semibold uppercase tracking-widest text-[#C8A251] block mb-2">
-            Serviços & Consultoria
-          </span>
-          <h2 className="font-editorial text-3xl sm:text-4xl font-bold text-[#0B2B20] mb-4">
-            Como Podemos Ajudar Você?
-          </h2>
-          <p className="text-sm text-gray-600 max-w-2xl mx-auto mb-12">
-            Orientação sob medida para encontrar sua residência definitiva ou anunciar seu patrimônio com a visibilidade que ele merece.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
-            <div
-              onClick={() => onOpenLeadModal(undefined, 'comprar')}
-              className="p-6 rounded-xl bg-[#F8F9FA] border border-gray-200/80 hover:border-[#C8A251] hover:shadow-xl cursor-pointer group transition-all"
-            >
-              <div className="w-12 h-12 rounded-xl bg-[#0B2B20] text-[#C8A251] flex items-center justify-center mb-4 group-hover:bg-[#C8A251] group-hover:text-[#0B2B20] transition-colors">
-                <Home className="w-6 h-6" />
-              </div>
-              <h3 className="font-editorial text-lg font-bold text-[#0B2B20] mb-2">Compra de Imóveis</h3>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Busca ativa e curadoria personalizada para encontrar residências ideais com o perfil do comprador.
-              </p>
-              <span className="text-xs font-semibold text-[#0B2B20] group-hover:text-[#C8A251] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Iniciar Busca <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </div>
-
-            <div
-              onClick={() => onOpenLeadModal(undefined, 'vender')}
-              className="p-6 rounded-xl bg-[#F8F9FA] border border-gray-200/80 hover:border-[#C8A251] hover:shadow-xl cursor-pointer group transition-all"
-            >
-              <div className="w-12 h-12 rounded-xl bg-[#0B2B20] text-[#C8A251] flex items-center justify-center mb-4 group-hover:bg-[#C8A251] group-hover:text-[#0B2B20] transition-colors">
-                <KeyRound className="w-6 h-6" />
-              </div>
-              <h3 className="font-editorial text-lg font-bold text-[#0B2B20] mb-2">Venda de Imóveis</h3>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Divulgação qualificada, precificação correta de mercado e alcance junto a compradores reais.
-              </p>
-              <span className="text-xs font-semibold text-[#0B2B20] group-hover:text-[#C8A251] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Anunciar Imóvel <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </div>
-
-            <div
-              onClick={() => onOpenLeadModal(undefined, 'investir')}
-              className="p-6 rounded-xl bg-[#F8F9FA] border border-gray-200/80 hover:border-[#C8A251] hover:shadow-xl cursor-pointer group transition-all"
-            >
-              <div className="w-12 h-12 rounded-xl bg-[#0B2B20] text-[#C8A251] flex items-center justify-center mb-4 group-hover:bg-[#C8A251] group-hover:text-[#0B2B20] transition-colors">
-                <TrendingUp className="w-6 h-6" />
-              </div>
-              <h3 className="font-editorial text-lg font-bold text-[#0B2B20] mb-2">Investimentos</h3>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Oportunidades com potencial de valorização acelerada, lançamentos e retorno de locação.
-              </p>
-              <span className="text-xs font-semibold text-[#0B2B20] group-hover:text-[#C8A251] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Consultar Opções <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </div>
-
-            <div
-              onClick={() => onOpenLeadModal(undefined, 'informacao')}
-              className="p-6 rounded-xl bg-[#F8F9FA] border border-gray-200/80 hover:border-[#C8A251] hover:shadow-xl cursor-pointer group transition-all"
-            >
-              <div className="w-12 h-12 rounded-xl bg-[#0B2B20] text-[#C8A251] flex items-center justify-center mb-4 group-hover:bg-[#C8A251] group-hover:text-[#0B2B20] transition-colors">
-                <FileCheck2 className="w-6 h-6" />
-              </div>
-              <h3 className="font-editorial text-lg font-bold text-[#0B2B20] mb-2">Avaliação Imobiliária</h3>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Estudo mercadológico com levantamento técnico para determinar o valor justo de comercialização.
-              </p>
-              <span className="text-xs font-semibold text-[#0B2B20] group-hover:text-[#C8A251] flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Solicitar Estudo <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 9. TRUST & CONFIDENCE FINAL BANNER (TFT STYLE) */}
+      {/* 9. TRUST & CONFIDENCE FINAL BANNER */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
         <div className="bg-[#0B2B20] rounded-2xl p-8 lg:p-14 text-white relative overflow-hidden shadow-2xl">
           <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gradient-to-l from-[#133F30] to-transparent opacity-40 pointer-events-none" />

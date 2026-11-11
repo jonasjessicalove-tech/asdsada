@@ -4,6 +4,35 @@ export type DevelopmentStatus = 'lancamento' | 'em_obras' | 'pronto';
 export type LeadStatus = 'novo' | 'em_atendimento' | 'visita_agendada' | 'proposta' | 'concluido' | 'arquivado';
 export type LeadInterest = 'comprar' | 'alugar' | 'vender' | 'investir' | 'visita' | 'informacao';
 
+export type PeopleCount = '1-2' | '3-4' | '5+' | 'familia';
+export type LifeStage = 'estudante' | 'jovem_profissional' | 'casal' | 'familia' | 'investidor';
+export type HousingPreference = 'exclusivo' | 'compartilhado' | 'flexivel';
+export type LifestyleVibe = 'quieto_homeoffice' | 'movimento_urbano' | 'lazer_familia' | 'natureza' | 'pet_friendly';
+export type LocationPriority = 'universidades' | 'metro_transporte' | 'bairro_tranquilo' | 'centro_vibrante' | 'escolas_parques';
+
+export interface ClientProfile {
+  freeTextQuery?: string;
+  peopleCount?: PeopleCount;
+  lifeStage?: LifeStage;
+  isStudent?: boolean;
+  nearUniversity?: boolean;
+  housingPreference?: HousingPreference;
+  lifestyle?: LifestyleVibe;
+  locationPriority?: LocationPriority;
+  maxBudget?: number;
+  minBudget?: number;
+  negotiationType?: NegotiationType | 'todos';
+  preferredRegion?: string;
+}
+
+export interface SmartMatchResult {
+  property: Property;
+  score: number; // 0 to 100
+  matchReason: string; // e.g. "Ideal para 2 estudantes: 350m da universidade, silencioso para estudo e fácil mobilidade."
+  badgeLabel?: string;
+  keyHighlights: string[];
+}
+
 export interface Property {
   id: string;
   title: string;

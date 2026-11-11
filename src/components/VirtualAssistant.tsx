@@ -65,6 +65,46 @@ export const VirtualAssistant: React.FC<{ onNavigate?: (route: string) => void }
   const generateLocalResponse = (query: string): { text: string; buttons?: ChatMessage['actionButtons'] } => {
     const q = query.toLowerCase();
 
+    if (q.includes('estudante') || q.includes('faculdade') || q.includes('universidade') || q.includes('dividir')) {
+      return {
+        text: `Temos opções incríveis para estudantes! Apartamentos e studios a poucos minutos a pé de faculdades e estações de metrô, com plantas ideais tanto para morar sozinho quanto para dividir com colegas, além de coworking no condomínio. Quer ver as opções ideais?`,
+        buttons: [
+          { label: 'Ver Imóveis para Estudantes', actionType: 'catalog' },
+          { label: 'Conversar com Sávio no WhatsApp', actionType: 'whatsapp', url: whatsappUrl },
+        ],
+      };
+    }
+
+    if (q.includes('matching') || q.includes('funciona') || q.includes('busca inteligente')) {
+      return {
+        text: `Nosso matching inteligente inverte a lógica tradicional: em vez de te obrigar a preencher filtros frios de quartos e metros quadrados, você conta quem vai morar e seu momento de vida. Nossa tecnologia cruza estilo de vida, mobilidade e silêncio para te indicar apenas o que realmente faz sentido!`,
+        buttons: [
+          { label: 'Testar Matching na Página Inicial', actionType: 'catalog' },
+          { label: 'Falar com Sávio no WhatsApp', actionType: 'whatsapp', url: whatsappUrl },
+        ],
+      };
+    }
+
+    if (q.includes('home office') || q.includes('silêncio') || q.includes('trabalho')) {
+      return {
+        text: `Perfeito! Selecionamos imóveis com tratamento acústico, ruas estritamente residenciais e espaços dedicados para foco profissional em home office. Deseja conhecer as unidades disponíveis?`,
+        buttons: [
+          { label: 'Ver Opções com Home Office', actionType: 'catalog' },
+          { label: 'Falar no WhatsApp', actionType: 'whatsapp', url: whatsappUrl },
+        ],
+      };
+    }
+
+    if (q.includes('família') || q.includes('familia') || q.includes('filhos') || q.includes('quintal')) {
+      return {
+        text: `Para famílias, priorizamos casas em condomínios fechados com segurança armada 24h, quintal amplo para crianças e pets, clube com piscina e proximidade aos melhores colégios. Deseja receber apresentações detalhadas?`,
+        buttons: [
+          { label: 'Ver Residências Familiares', actionType: 'catalog' },
+          { label: 'Receber Apresentações no WhatsApp', actionType: 'whatsapp', url: whatsappUrl },
+        ],
+      };
+    }
+
     if (q.includes('whatsapp') || q.includes('telefone') || q.includes('contato') || q.includes('falar')) {
       return {
         text: `Você pode falar diretamente com o corretor Sávio no WhatsApp oficial para receber atendimento exclusivo e prioritário:`,
@@ -189,10 +229,11 @@ export const VirtualAssistant: React.FC<{ onNavigate?: (route: string) => void }
   };
 
   const quickQuestions = [
-    'Quero ver casas em Alphaville',
-    'Como simular financiamento?',
-    'Quero agendar uma visita com Sávio',
-    'Qual o WhatsApp oficial de Sávio?',
+    'Sou estudante e quero imóvel perto de faculdade',
+    'Casal buscando home office silencioso e calmo',
+    'Família procurando condomínio com segurança e quintal',
+    'Como funciona o matching inteligente?',
+    'Falar direto com o corretor Sávio no WhatsApp',
   ];
 
   return (

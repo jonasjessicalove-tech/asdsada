@@ -197,6 +197,80 @@ Mantenha linguagem focada exclusivamente em assessoria imobiliária de alto padr
   }
 });
 
+// 5. Intelligent Client-Centric Real Estate Matching Endpoint
+app.post('/api/smart-match', async (req, res) => {
+  try {
+    const { query, profile, properties } = req.body;
+
+    if (!Array.isArray(properties) || properties.length === 0) {
+      return res.status(400).json({ error: 'Lista de imóveis ausente' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        personalizedSummary: 'Filtramos os imóveis mais compatíveis com o seu perfil de moradia.',
+        scoredPropertyIds: [],
+      });
+    }
+
+    const condensedCatalog = properties.map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      type: p.propertyType,
+      neighborhood: p.neighborhood,
+      bedrooms: p.bedrooms,
+      price: p.price,
+      negotiationType: p.negotiationType,
+      features: p.features?.slice(0, 5),
+    }));
+
+    const prompt = `Você é um consultor imobiliário especializado em matching humano e inteligente de imóveis.
+O cliente procura um imóvel com base nas seguintes características:
+- Busca em Linguagem Natural: "${query || 'Não informada'}"
+- Número de pessoas: "${profile?.peopleCount || 'Não informado'}"
+- Momento de vida: "${profile?.lifeStage || (profile?.isStudent ? 'estudante' : 'Não informado')}"
+- Próximo a faculdade/universidade: ${profile?.nearUniversity || profile?.isStudent ? 'Sim' : 'Não'}
+- Preferência de moradia: "${profile?.housingPreference || 'Não informado'}"
+- Estilo de vida: "${profile?.lifestyle || 'Não informado'}"
+- Prioridade de localização: "${profile?.locationPriority || 'Não informado'}"
+
+Catálogo de Imóveis:
+${JSON.stringify(condensedCatalog, null, 2)}
+
+Sua tarefa:
+1. Gere um resumo empático e personalizado em 1 frase elegante explicando o perfil detectado (ex: "Encontramos opções ideais para 2 pessoas próximas a faculdades e com excelente mobilidade urbana.").
+2. Para cada imóvel, atribua uma nota de compatibilidade (score entre 60 e 99) e uma frase curta em português explicando por que ele faz sentido para esse perfil específico (campo customReason).
+Retorne ESTRITAMENTE um objeto JSON válido no formato:
+{
+  "personalizedSummary": "string",
+  "scoredPropertyIds": [
+    {
+      "id": "string",
+      "score": number,
+      "customReason": "string"
+    }
+  ]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    return res.json(parsed);
+  } catch (err: any) {
+    console.warn('AI matching fallback error:', err?.message || err);
+    return res.json({
+      personalizedSummary: 'Encontramos imóveis selecionados com base no que você busca.',
+      scoredPropertyIds: [],
+    });
+  }
+});
+
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
