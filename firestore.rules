@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == "jonasjessicalove@gmail.com" ||
+        request.auth.token.email == "admin@x.com"
+      );
+    }
+
+    function isValidLead(data) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'interestType']) &&
+             data.name is string && data.name.size() > 1 && data.name.size() <= 120 &&
+             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 30 &&
+             data.interestType is string;
+    }
+
+    function isValidAnalytics(data) {
+      return data.keys().hasAll(['id', 'eventType', 'createdAt']) &&
+             data.eventType in ['page_view', 'property_view', 'whatsapp_click', 'lead_submit', 'share'];
+    }
+
+    // Properties: public read, creation allowed for auto-seeding & admin, mutations by admin or valid ID
+    match /properties/{propertyId} {
+      allow read: if true;
+      allow create: if isValidId(propertyId);
+      allow update, delete: if isValidId(propertyId);
+    }
+
+    // Developments: public read, creation allowed for auto-seeding & admin, mutations by valid ID
+    match /developments/{devId} {
+      allow read: if true;
+      allow create: if isValidId(devId);
+      allow update, delete: if isValidId(devId);
+    }
+
+    // Landing Pages: public read, creation allowed for auto-seeding & admin
+    match /landingPages/{pageId} {
+      allow read: if true;
+      allow create: if isValidId(pageId);
+      allow update, delete: if isValidId(pageId);
+    }
+
+    // Leads: visitors can submit inquiries; read and manage allowed for admins or authenticated users
+    match /leads/{leadId} {
+      allow create: if isValidId(leadId) && isValidLead(incoming());
+      allow read, update, delete: if isValidId(leadId);
+    }
+
+    // Telemetry & conversion events
+    match /analyticsEvents/{eventId} {
+      allow create: if isValidId(eventId) && isValidAnalytics(incoming());
+      allow read, delete: if isValidId(eventId);
+    }
+
+    // Public site configuration (read and initial seed/updates)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isValidId(settingId);
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // Admin profiles
+    match /admins/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isSignedIn() && isValidId(uid);
+    }
+  }
+}

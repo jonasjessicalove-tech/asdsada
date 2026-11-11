@@ -1,0 +1,193 @@
+{
+  "entities": {
+    "Property": {
+      "title": "Property",
+      "description": "Real estate property listing for sale, rent, or launch",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 160 },
+        "slug": { "type": "string", "maxLength": 160 },
+        "code": { "type": "string", "maxLength": 30 },
+        "price": { "type": "number" },
+        "negotiationType": { "type": "string", "enum": ["venda", "aluguel", "lancamento"] },
+        "propertyType": { "type": "string", "enum": ["casa", "apartamento", "cobertura", "terreno", "comercial"] },
+        "neighborhood": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "state": { "type": "string", "maxLength": 20 },
+        "address": { "type": "string", "maxLength": 200 },
+        "area": { "type": "number" },
+        "builtArea": { "type": "number" },
+        "bedrooms": { "type": "number" },
+        "suites": { "type": "number" },
+        "bathrooms": { "type": "number" },
+        "parkingSpots": { "type": "number" },
+        "description": { "type": "string", "maxLength": 5000 },
+        "features": { "type": "array" },
+        "featured": { "type": "boolean" },
+        "published": { "type": "boolean" },
+        "mainImage": { "type": "string", "maxLength": 1000 },
+        "gallery": { "type": "array" },
+        "videoUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "slug", "price", "negotiationType", "propertyType", "published"]
+    },
+    "Development": {
+      "title": "Development",
+      "description": "Real estate venture or development project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 160 },
+        "slug": { "type": "string", "maxLength": 160 },
+        "developer": { "type": "string", "maxLength": 120 },
+        "neighborhood": { "type": "string", "maxLength": 100 },
+        "city": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "minPrice": { "type": "number" },
+        "maxPrice": { "type": "number" },
+        "typologies": { "type": "string", "maxLength": 200 },
+        "features": { "type": "array" },
+        "images": { "type": "array" },
+        "status": { "type": "string", "enum": ["lancamento", "em_obras", "pronto"] },
+        "featured": { "type": "boolean" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "slug", "published"]
+    },
+    "LandingPage": {
+      "title": "LandingPage",
+      "description": "Individual marketing landing page for an asset or campaign",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 160 },
+        "slug": { "type": "string", "maxLength": 160 },
+        "headline": { "type": "string", "maxLength": 200 },
+        "subheadline": { "type": "string", "maxLength": 400 },
+        "targetType": { "type": "string", "enum": ["property", "development", "custom"] },
+        "targetId": { "type": "string", "maxLength": 100 },
+        "bannerImage": { "type": "string", "maxLength": 1000 },
+        "gallery": { "type": "array" },
+        "highlights": { "type": "array" },
+        "published": { "type": "boolean" },
+        "viewsCount": { "type": "number" },
+        "leadsCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "slug", "published"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "Prospective client lead captured through website forms or WhatsApp CTA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 120 },
+        "interestType": { "type": "string", "enum": ["comprar", "alugar", "vender", "investir", "visita", "informacao"] },
+        "propertyId": { "type": "string", "maxLength": 100 },
+        "propertyTitle": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "origin": { "type": "string", "maxLength": 100 },
+        "pageUrl": { "type": "string", "maxLength": 500 },
+        "campaign": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["novo", "em_atendimento", "visita_agendada", "proposta", "concluido", "arquivado"] },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "interestType"]
+    },
+    "AnalyticsEvent": {
+      "title": "AnalyticsEvent",
+      "description": "Telemetry event for views, clicks, and conversion tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "eventType": { "type": "string", "enum": ["page_view", "property_view", "whatsapp_click", "lead_submit", "share"] },
+        "targetId": { "type": "string", "maxLength": 100 },
+        "targetTitle": { "type": "string", "maxLength": 200 },
+        "pageUrl": { "type": "string", "maxLength": 500 },
+        "referrer": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "eventType", "createdAt"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Editable branding, contact, and broker configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "brokerName": { "type": "string", "maxLength": 120 },
+        "commercialName": { "type": "string", "maxLength": 120 },
+        "creci": { "type": "string", "maxLength": 50 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 200 },
+        "instagramUrl": { "type": "string", "maxLength": 300 },
+        "facebookUrl": { "type": "string", "maxLength": 300 },
+        "linkedinUrl": { "type": "string", "maxLength": 300 },
+        "youtubeUrl": { "type": "string", "maxLength": 300 },
+        "bio": { "type": "string", "maxLength": 2000 },
+        "aboutExperience": { "type": "string", "maxLength": 3000 },
+        "heroTitle": { "type": "string", "maxLength": 200 },
+        "heroSubtitle": { "type": "string", "maxLength": 400 },
+        "heroBadge": { "type": "string", "maxLength": 100 },
+        "primaryColor": { "type": "string", "maxLength": 30 },
+        "logoUrl": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "brokerName", "commercialName"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Administrative account records",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/properties/{propertyId}": {
+      "schema": { "$ref": "#/entities/Property" },
+      "description": "Collection of real estate properties"
+    },
+    "/developments/{developmentId}": {
+      "schema": { "$ref": "#/entities/Development" },
+      "description": "Collection of real estate developments"
+    },
+    "/landingPages/{pageId}": {
+      "schema": { "$ref": "#/entities/LandingPage" },
+      "description": "Collection of individual landing pages"
+    },
+    "/leads/{leadId}": {
+      "schema": { "$ref": "#/entities/Lead" },
+      "description": "Collection of client inquiries and leads"
+    },
+    "/analyticsEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/AnalyticsEvent" },
+      "description": "Collection of navigation and conversion events"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Global website settings document (settingId='global')"
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized administrators list"
+    }
+  }
+}

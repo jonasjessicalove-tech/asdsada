@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-heading: 'Playfair Display', Georgia, serif;
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    font-family: var(--font-body);
+  }
+
+  body {
+    background-color: #F8F9FA;
+    color: #1A2621;
+    overflow-x: hidden;
+  }
+}
+
+.font-editorial {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-serif-luxury {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-cinzel {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+/* Custom noble scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #071C15;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #153D2F;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C8A251;
+}
+
+/* Noble green and gold glow effects */
+.gold-glow {
+  box-shadow: 0 0 25px -5px rgba(200, 162, 81, 0.3);
+}
+
+.gold-glow-lg {
+  box-shadow: 0 0 45px -8px rgba(200, 162, 81, 0.45);
+}
+
+.emerald-glow {
+  box-shadow: 0 0 35px -5px rgba(11, 43, 32, 0.4);
+}
+
+.card-luxury {
+  background: #ffffff;
+  border: 1px solid rgba(229, 231, 235, 0.9);
+  box-shadow: 0 4px 20px -2px rgba(11, 43, 32, 0.06);
+}
+
+.card-luxury:hover {
+  border-color: rgba(200, 162, 81, 0.5);
+  box-shadow: 0 10px 30px -4px rgba(11, 43, 32, 0.12);
+}
+
+@keyframes border-beam {
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+.animate-border-beam {
+  animation: border-beam var(--duration, 12s) infinite linear;
+}
+
+@keyframes shimmer-slide {
+  to {
+    transform: translate(calc(100cqw - 100%), 0);
+  }
+}
+
+@keyframes spin-around {
+  0% {
+    transform: translateZ(0) rotate(0);
+  }
+  100% {
+    transform: translateZ(0) rotate(360deg);
+  }
+}
+
+.animate-shimmer-slide {
+  animation: shimmer-slide var(--speed, 3s) ease-in-out infinite alternate;
+}
+
+.animate-spin-around {
+  animation: spin-around calc(var(--speed, 3s) * 2) infinite linear;
+}
+

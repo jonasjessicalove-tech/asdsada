@@ -1,0 +1,6 @@
+{
+  "name": "Imóveis com Sávio | Corretor de Imóveis & Alto Padrão",
+  "description": "Portal imobiliário oficial de Sávio (@imoveiscomsavio) - Imóveis de alto padrão, lançamentos exclusivos, consultoria imobiliária e captação qualificada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
