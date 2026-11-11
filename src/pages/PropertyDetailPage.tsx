@@ -19,7 +19,8 @@ import {
   Copy,
   ChevronLeft,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Film
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { trackEvent } from '../lib/analytics';
@@ -341,6 +342,34 @@ export const PropertyDetailPage: React.FC<PropertyDetailPageProps> = ({
                       <span>{feat}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Video Tour Section if Available */}
+            {property.videoUrl && (
+              <div className="bg-white rounded-2xl border border-gray-200/90 p-6 sm:p-8 space-y-4 shadow-sm overflow-hidden">
+                <h3 className="font-editorial text-xl font-bold text-[#0B2B20] border-b border-gray-100 pb-3 flex items-center gap-2">
+                  <Film className="w-5 h-5 text-[#C8A251]" />
+                  <span>Vídeo Tour do Imóvel</span>
+                </h3>
+                <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center">
+                  {property.videoUrl.match(/\.(mp4|webm|mov|ogg)($|\?)/i) || property.videoUrl.startsWith('data:video') || property.videoUrl.includes('blob.vercel-storage.com') ? (
+                    <video
+                      src={property.videoUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full max-h-[500px] object-contain rounded-xl"
+                    />
+                  ) : (
+                    <iframe
+                      src={property.videoUrl.replace('watch?v=', 'embed/')}
+                      title="Vídeo Tour"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      className="w-full h-[400px] rounded-xl"
+                    />
+                  )}
                 </div>
               </div>
             )}

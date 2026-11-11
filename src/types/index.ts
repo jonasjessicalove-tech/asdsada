@@ -78,6 +78,8 @@ export interface Development {
   typologies: string;
   features: string[];
   images: string[];
+  videoUrl?: string;
+  videos?: string[];
   status: DevelopmentStatus;
   featured: boolean;
   published: boolean;

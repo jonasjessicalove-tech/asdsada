@@ -1,8 +1,8 @@
-import { applyWatermark } from './watermark';
+import { applyWatermark, compressImage } from './watermark';
 
 /**
  * Vercel Blob storage client.
- * Uploads photos, attachments, PDFs, and documents directly to Vercel Blob via /api/upload.
+ * Uploads photos, attachments, videos, and documents directly to Vercel Blob via /api/upload.
  */
 export async function uploadToBlob(file: File): Promise<string> {
   try {
@@ -41,7 +41,21 @@ export async function uploadToBlob(file: File): Promise<string> {
 }
 
 /**
- * Upload image with optional automatic official logo watermark.
+ * Upload video file (MP4, WebM, MOV) directly to Vercel Blob.
+ */
+export async function uploadVideoToBlob(file: File): Promise<string> {
+  return uploadToBlob(file);
+}
+
+/**
+ * Upload document or attachment (PDF, memorial, planta baixa) to Vercel Blob.
+ */
+export async function uploadDocumentToBlob(file: File): Promise<string> {
+  return uploadToBlob(file);
+}
+
+/**
+ * Upload image with automatic lossless-compression and official golden logo watermark.
  */
 export async function uploadImage(
   file: File,
@@ -50,11 +64,15 @@ export async function uploadImage(
 ): Promise<string> {
   let fileToUpload = file;
 
-  if (autoWatermark && file.type.startsWith('image/')) {
+  if (file.type.startsWith('image/')) {
     try {
-      fileToUpload = await applyWatermark(file, logoUrl);
+      if (autoWatermark) {
+        fileToUpload = await applyWatermark(file, logoUrl);
+      } else {
+        fileToUpload = await compressImage(file);
+      }
     } catch (wmError) {
-      console.warn('Watermark generation notice (uploading original):', wmError);
+      console.warn('Watermark/compression notice (uploading original):', wmError);
       fileToUpload = file;
     }
   }
@@ -63,20 +81,38 @@ export async function uploadImage(
 }
 
 /**
- * Upload multiple files to Vercel Blob with automatic watermark on images.
+ * Upload multiple files to Vercel Blob with automatic compression and watermark on images.
  */
 export async function uploadMultipleImages(
   files: File[],
   logoUrl?: string,
   autoWatermark: boolean = true,
-  onProgress?: (index: number, total: number) => void
+  onProgress?: (index: number, total: number, message: string) => void
 ): Promise<string[]> {
   const urls: string[] = [];
-  for (let i = 0; i < files.length; i++) {
+  const total = files.length;
+
+  for (let i = 0; i < total; i++) {
     const file = files[i];
-    const url = await uploadImage(file, logoUrl, autoWatermark);
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+
+    const label = isVideo
+      ? `Enviando vídeo ${i + 1} de ${total} para Vercel Blob...`
+      : isImage
+      ? `Otimizando e aplicando marca d'água oficial na foto ${i + 1} de ${total}...`
+      : `Enviando arquivo ${i + 1} de ${total}...`;
+
+    if (onProgress) onProgress(i, total, label);
+
+    const url = isVideo
+      ? await uploadVideoToBlob(file)
+      : await uploadImage(file, logoUrl, autoWatermark);
+
     urls.push(url);
-    if (onProgress) onProgress(i + 1, files.length);
+
+    if (onProgress) onProgress(i + 1, total, `${i + 1} de ${total} concluídos`);
   }
+
   return urls;
 }

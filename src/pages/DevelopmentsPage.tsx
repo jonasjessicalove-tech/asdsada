@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { Development, LeadInterest } from '../types';
-import { Building2, MapPin, Sparkles, ArrowRight, MessageCircle } from 'lucide-react';
+import { Building2, MapPin, Sparkles, ArrowRight, MessageCircle, Film, Play, X } from 'lucide-react';
 import { trackEvent } from '../lib/analytics';
 
 interface DevelopmentsPageProps {
@@ -12,6 +12,7 @@ interface DevelopmentsPageProps {
 export const DevelopmentsPage: React.FC<DevelopmentsPageProps> = ({ navigate, onOpenLeadModal }) => {
   const { developments, settings } = useSettings();
   const [selectedStatus, setSelectedStatus] = useState<string>('todos');
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
   const cleanWhatsapp = (settings.whatsapp || '').replace(/\D/g, '');
 
@@ -25,6 +26,51 @@ export const DevelopmentsPage: React.FC<DevelopmentsPageProps> = ({ navigate, on
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A2621]">
+      {/* Video Modal */}
+      {activeVideoUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="relative w-full max-w-4xl bg-slate-950 rounded-2xl overflow-hidden border border-[#C8A251]/40 shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-[#0B2B20]">
+              <span className="font-editorial text-sm font-bold text-[#C8A251] flex items-center gap-2">
+                <Film className="w-4 h-4 text-[#C8A251]" />
+                <span>Tour em Vídeo do Empreendimento</span>
+              </span>
+              <button
+                onClick={() => setActiveVideoUrl(null)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Fechar vídeo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 bg-black flex items-center justify-center min-h-[360px]">
+              {activeVideoUrl.match(/\.(mp4|webm|mov|ogg)($|\?)/i) || activeVideoUrl.startsWith('data:video') || activeVideoUrl.includes('blob.vercel-storage.com') ? (
+                <video
+                  src={activeVideoUrl}
+                  controls
+                  autoPlay
+                  className="w-full max-h-[70vh] rounded-lg shadow-lg"
+                />
+              ) : activeVideoUrl.includes('youtube.com') || activeVideoUrl.includes('youtu.be') ? (
+                <iframe
+                  src={activeVideoUrl.replace('watch?v=', 'embed/')}
+                  title="Tour Vídeo"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-[450px] rounded-lg"
+                />
+              ) : (
+                <iframe
+                  src={activeVideoUrl}
+                  title="Tour Vídeo"
+                  className="w-full h-[450px] rounded-lg"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner in Noble Green #0B2B20 */}
       <section className="bg-[#0B2B20] text-white pt-32 pb-16 px-4 sm:px-6 lg:px-8 border-b border-[#153D2F] relative overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#C8A251_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none" />
@@ -70,6 +116,7 @@ export const DevelopmentsPage: React.FC<DevelopmentsPageProps> = ({ navigate, on
           {filteredDevelopments.map((dev) => {
             const currentImgIdx = activeImgIndex[dev.id] || 0;
             const currentImg = dev.images?.[currentImgIdx] || dev.images?.[0] || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80';
+            const hasVideo = !!(dev.videoUrl || (dev.videos && dev.videos.length > 0));
 
             const devWhatsappUrl = `https://wa.me/${cleanWhatsapp}?text=${encodeURIComponent(
               `Olá Sávio! Gostaria de receber a apresentação completa e tabela do empreendimento "${dev.name}".`
@@ -96,6 +143,18 @@ export const DevelopmentsPage: React.FC<DevelopmentsPageProps> = ({ navigate, on
                       <span className="absolute bottom-4 right-4 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-[11px] text-[#C8A251] font-medium border border-white/10">
                         Foto {currentImgIdx + 1} de {dev.images.length}
                       </span>
+                    )}
+
+                    {/* Video tour floating badge if available */}
+                    {hasVideo && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveVideoUrl(dev.videoUrl || dev.videos?.[0] || null)}
+                        className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/80 hover:bg-[#C8A251] text-[#C8A251] hover:text-[#0B2B20] text-xs font-bold border border-[#C8A251]/50 backdrop-blur-md transition-all shadow-lg cursor-pointer"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Vídeo Tour</span>
+                      </button>
                     )}
                   </div>
 
@@ -163,6 +222,17 @@ export const DevelopmentsPage: React.FC<DevelopmentsPageProps> = ({ navigate, on
                     </div>
 
                     <div className="flex items-center gap-3 w-full sm:w-auto">
+                      {hasVideo && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveVideoUrl(dev.videoUrl || dev.videos?.[0] || null)}
+                          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-[#C8A251] text-[#0B2B20] hover:bg-[#C8A251]/15 text-xs font-bold transition-all"
+                        >
+                          <Film className="w-4 h-4 text-[#C8A251]" />
+                          <span className="hidden sm:inline">Ver Vídeo</span>
+                        </button>
+                      )}
+
                       <a
                         href={devWhatsappUrl}
                         target="_blank"

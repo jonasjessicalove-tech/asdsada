@@ -31,9 +31,12 @@ import {
   ImagePlus,
   Loader2,
   Sparkles,
-  Layers
+  Layers,
+  Video,
+  Film,
+  Play
 } from 'lucide-react';
-import { uploadImage, uploadMultipleImages } from '../lib/storage';
+import { uploadImage, uploadMultipleImages, uploadVideoToBlob, uploadDocumentToBlob } from '../lib/storage';
 
 interface AdminPageProps {
   navigate: (route: string) => void;
@@ -92,9 +95,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
     features: ['Piscina', 'Varanda Gourmet', 'Segurança 24h'],
     featured: true,
     published: true,
-    mainImage: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-    gallery: []
+    gallery: [],
+    videoUrl: ''
   });
+
+  const [propUploading, setPropUploading] = useState(false);
+  const [propUploadProgress, setPropUploadProgress] = useState('');
+  const [autoWatermarkProp, setAutoWatermarkProp] = useState(true);
 
   // Settings State Form
   const [settingsForm, setSettingsForm] = useState<SiteSettings>(settings);
@@ -121,13 +128,74 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
   // Copy feedback
   const [copiedLpId, setCopiedLpId] = useState<string | null>(null);
 
+  // Property Photo Gallery Handlers
+  const handlePropPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setPropUploading(true);
+    const fileList = Array.from(files);
+    try {
+      const urls = await uploadMultipleImages(
+        fileList,
+        settings.logoUrl,
+        autoWatermarkProp,
+        (idx, total, msg) => {
+          setPropUploadProgress(msg);
+        }
+      );
+      setPropForm((prev) => {
+        const currentGallery = prev.gallery || [];
+        const combined = [...currentGallery, ...urls];
+        return {
+          ...prev,
+          mainImage: prev.mainImage || urls[0] || '',
+          gallery: combined,
+        };
+      });
+    } catch (err: any) {
+      console.error('Erro no upload de fotos do imóvel:', err);
+    } finally {
+      setPropUploading(false);
+      setPropUploadProgress('');
+      e.target.value = '';
+    }
+  };
+
+  const handleRemovePropPhoto = (index: number) => {
+    setPropForm((prev) => {
+      const currentGallery = (prev.gallery || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        gallery: currentGallery,
+        mainImage: currentGallery[0] || prev.mainImage || '',
+      };
+    });
+  };
+
+  const handleSetCoverPropPhoto = (index: number) => {
+    setPropForm((prev) => {
+      const currentGallery = [...(prev.gallery || [])];
+      if (index >= 0 && index < currentGallery.length) {
+        const cover = currentGallery[index];
+        return {
+          ...prev,
+          mainImage: cover,
+        };
+      }
+      return prev;
+    });
+  };
+
   // Development Modal & Multi-Photo Form State
   const [devModalOpen, setDevModalOpen] = useState(false);
   const [editingDevId, setEditingDevId] = useState<string | null>(null);
   const [devUploading, setDevUploading] = useState(false);
   const [devUploadProgress, setDevUploadProgress] = useState('');
+  const [devVideoUploading, setDevVideoUploading] = useState(false);
+  const [devVideoProgress, setDevVideoProgress] = useState('');
   const [autoWatermarkDev, setAutoWatermarkDev] = useState(true);
   const [manualDevImageUrl, setManualDevImageUrl] = useState('');
+  const [manualDevVideoUrl, setManualDevVideoUrl] = useState('');
   const [devNewFeature, setDevNewFeature] = useState('');
 
   const [devForm, setDevForm] = useState<Partial<Development>>({
@@ -142,6 +210,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
     description: '',
     deliveryDate: 'Dezembro de 2027',
     images: [],
+    videoUrl: '',
+    videos: [],
     features: ['Piscina com borda infinita', 'Segurança privada 24h', 'Academia com vista panorâmica', 'Spa e sauna'],
     published: true,
   });
@@ -160,6 +230,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
       description: '',
       deliveryDate: 'Dezembro de 2027',
       images: [],
+      videoUrl: '',
+      videos: [],
       features: ['Piscina com borda infinita', 'Segurança privada 24h', 'Academia com vista panorâmica'],
       published: true,
     });
@@ -171,6 +243,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
     setDevForm({
       ...dev,
       images: dev.images ? [...dev.images] : [],
+      videos: dev.videos ? [...dev.videos] : (dev.videoUrl ? [dev.videoUrl] : []),
+      videoUrl: dev.videoUrl || (dev.videos && dev.videos[0]) || '',
       features: dev.features ? [...dev.features] : [],
     });
     setDevModalOpen(true);
@@ -180,27 +254,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setDevUploading(true);
-    const total = files.length;
-    const uploadedUrls: string[] = [];
+    const fileList = Array.from(files);
 
-    for (let i = 0; i < total; i++) {
-      const file = files[i];
-      setDevUploadProgress(`Processando foto ${i + 1} de ${total}${autoWatermarkDev ? " com marca d'água oficial" : ''}...`);
-      try {
-        const url = await uploadImage(file, settings.logoUrl, autoWatermarkDev);
-        uploadedUrls.push(url);
-      } catch (err: any) {
-        console.error('Erro no upload de foto:', err);
-      }
+    try {
+      const uploadedUrls = await uploadMultipleImages(
+        fileList,
+        settings.logoUrl,
+        autoWatermarkDev,
+        (idx, total, msg) => {
+          setDevUploadProgress(msg);
+        }
+      );
+
+      setDevForm((prev) => ({
+        ...prev,
+        images: [...(prev.images || []), ...uploadedUrls],
+      }));
+    } catch (err: any) {
+      console.error('Erro no upload de fotos:', err);
+    } finally {
+      setDevUploading(false);
+      setDevUploadProgress('');
+      e.target.value = '';
     }
-
-    setDevForm((prev) => ({
-      ...prev,
-      images: [...(prev.images || []), ...uploadedUrls],
-    }));
-    setDevUploading(false);
-    setDevUploadProgress('');
-    e.target.value = '';
   };
 
   const handleRemoveDevPhoto = (index: number) => {
@@ -228,6 +304,79 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
       images: [...(prev.images || []), manualDevImageUrl.trim()],
     }));
     setManualDevImageUrl('');
+  };
+
+  // Video Upload & Management Handlers for Developments
+  const handleDevVideosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setDevVideoUploading(true);
+    const total = files.length;
+    const uploadedVideos: string[] = [];
+
+    for (let i = 0; i < total; i++) {
+      const file = files[i];
+      const mbSize = (file.size / (1024 * 1024)).toFixed(1);
+      setDevVideoProgress(`Enviando vídeo ${i + 1} de ${total} (${mbSize}MB) via Vercel Blob...`);
+      try {
+        const url = await uploadVideoToBlob(file);
+        uploadedVideos.push(url);
+      } catch (err: any) {
+        console.error('Erro no upload de vídeo:', err);
+      }
+    }
+
+    setDevForm((prev) => {
+      const allVideos = [...(prev.videos || []), ...uploadedVideos];
+      return {
+        ...prev,
+        videos: allVideos,
+        videoUrl: prev.videoUrl || allVideos[0] || '',
+      };
+    });
+
+    setDevVideoUploading(false);
+    setDevVideoProgress('');
+    e.target.value = '';
+  };
+
+  const handleAddManualDevVideo = () => {
+    if (!manualDevVideoUrl.trim()) return;
+    const url = manualDevVideoUrl.trim();
+    setDevForm((prev) => {
+      const allVideos = [...(prev.videos || []), url];
+      return {
+        ...prev,
+        videos: allVideos,
+        videoUrl: prev.videoUrl || url,
+      };
+    });
+    setManualDevVideoUrl('');
+  };
+
+  const handleRemoveDevVideo = (index: number) => {
+    setDevForm((prev) => {
+      const allVideos = (prev.videos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        videos: allVideos,
+        videoUrl: allVideos[0] || '',
+      };
+    });
+  };
+
+  const handleSetPrimaryDevVideo = (index: number) => {
+    setDevForm((prev) => {
+      const allVideos = [...(prev.videos || [])];
+      if (index >= 0 && index < allVideos.length) {
+        const selected = allVideos[index];
+        return {
+          ...prev,
+          videoUrl: selected,
+        };
+      }
+      return prev;
+    });
   };
 
   const handleAddDevFeature = () => {
@@ -266,6 +415,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
       images: devForm.images && devForm.images.length > 0
         ? devForm.images
         : ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80'],
+      videoUrl: devForm.videoUrl || (devForm.videos && devForm.videos[0]) || '',
+      videos: devForm.videos || (devForm.videoUrl ? [devForm.videoUrl] : []),
       features: devForm.features || [],
       featured: devForm.featured ?? true,
       published: devForm.published ?? true,
@@ -1517,31 +1668,117 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
                 </div>
               </div>
 
-              {/* Image Input + Upload (Vercel Blob / File Reader) */}
-              <div>
-                <label className="block text-xs uppercase tracking-wider text-slate-300 font-semibold mb-1">
-                  Foto Principal (URL ou Upload)
-                </label>
-                <div className="flex gap-2">
+              {/* PROPERTY MULTI-PHOTO GALLERY & VERCEL BLOB UPLOAD */}
+              <div className="p-4 rounded-xl bg-slate-900 border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-amber-300 font-bold">
+                      Galeria de Fotos do Imóvel ({((propForm.gallery?.length || 0) + (propForm.mainImage ? 1 : 0))} fotos)
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Upload via Vercel Blob com compressão inteligente sem perda de qualidade e marca d'água oficial.
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-300 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/25">
+                    <input
+                      type="checkbox"
+                      checked={autoWatermarkProp}
+                      onChange={(e) => setAutoWatermarkProp(e.target.checked)}
+                      className="accent-amber-500 w-3.5 h-3.5 rounded"
+                    />
+                    <span>Marca d'Água Oficial</span>
+                  </label>
+                </div>
+
+                {/* Upload & URL Controls */}
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="url"
                     value={propForm.mainImage}
                     onChange={(e) => setPropForm({ ...propForm, mainImage: e.target.value })}
-                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 outline-none focus:border-amber-500"
-                    placeholder="https://..."
+                    className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-100 outline-none focus:border-amber-500"
+                    placeholder="URL da foto de capa (https://...)"
                   />
-                  <label className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer flex items-center gap-1 shrink-0 border border-slate-700">
-                    <ImageIcon className="w-4 h-4 text-amber-400" />
-                    <span>Upload</span>
+                  <label className="px-3.5 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition-colors">
+                    <ImagePlus className="w-4 h-4 text-amber-400" />
+                    <span>{propUploading ? propUploadProgress || 'Enviando...' : 'Adicionar Múltiplas Fotos'}</span>
                     <input
                       type="file"
+                      multiple
                       accept="image/*"
+                      className="hidden"
+                      disabled={propUploading}
+                      onChange={handlePropPhotosUpload}
+                    />
+                  </label>
+                </div>
+
+                {/* Gallery Thumbnails */}
+                {propForm.gallery && propForm.gallery.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                    {propForm.gallery.map((img, idx) => {
+                      const isCover = propForm.mainImage === img;
+                      return (
+                        <div
+                          key={idx}
+                          className={`relative rounded-lg overflow-hidden border bg-slate-950 group ${
+                            isCover ? 'border-amber-500 shadow-sm' : 'border-slate-800'
+                          }`}
+                        >
+                          <img src={img} alt={`Foto ${idx + 1}`} className="w-full h-16 object-cover" />
+                          {isCover ? (
+                            <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500 text-slate-950 uppercase">
+                              Capa
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetCoverPropPhoto(idx)}
+                              className="absolute top-1 left-1 px-1 py-0.5 rounded text-[8px] bg-black/80 hover:bg-amber-500 hover:text-slate-950 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              Capa
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePropPhoto(idx)}
+                            className="absolute top-1 right-1 p-0.5 rounded-full bg-rose-500 text-white hover:bg-rose-600 transition-colors"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* VIDEO TOUR URL & UPLOAD */}
+              <div>
+                <label className="block text-xs uppercase tracking-wider text-slate-300 font-semibold mb-1">
+                  Vídeo Tour do Imóvel (Vercel Blob ou YouTube/Vimeo)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={propForm.videoUrl || ''}
+                    onChange={(e) => setPropForm({ ...propForm, videoUrl: e.target.value })}
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 outline-none focus:border-amber-500"
+                    placeholder="Cole link de vídeo ou envie arquivo MP4..."
+                  />
+                  <label className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer flex items-center gap-1 shrink-0 border border-slate-700">
+                    <Video className="w-4 h-4 text-amber-400" />
+                    <span>Upload Vídeo</span>
+                    <input
+                      type="file"
+                      accept="video/*,video/mp4,video/webm"
                       className="hidden"
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          const url = await uploadImage(file, settings.logoUrl, true);
-                          setPropForm((prev) => ({ ...prev, mainImage: url }));
+                          const url = await uploadVideoToBlob(file);
+                          setPropForm((prev) => ({ ...prev, videoUrl: url }));
                         }
                       }}
                     />
@@ -1874,7 +2111,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
                       <span>Galeria de Fotos do Empreendimento ({devForm.images?.length || 0} fotos)</span>
                     </h4>
                     <p className="text-xs text-slate-400">
-                      Envie várias fotos de uma vez. O sistema aplica a marca d'água oficial automaticamente em cada uma.
+                      Envie quantas fotos quiser via Vercel Blob. O sistema converte com compressão inteligente sem perda visual e aplica a marca d'água oficial automaticamente.
                     </p>
                   </div>
 
@@ -1886,7 +2123,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
                       onChange={(e) => setAutoWatermarkDev(e.target.checked)}
                       className="accent-amber-500 w-4 h-4 rounded"
                     />
-                    <span>Marca d'Água Oficial Automática</span>
+                    <span>Marca d'Água Oficial com Logo Dourado</span>
                   </label>
                 </div>
 
@@ -1895,21 +2132,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
                   {devUploading ? (
                     <div className="py-4 space-y-2">
                       <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
-                      <p className="text-sm font-semibold text-amber-300">{devUploadProgress || 'Enviando fotos para Vercel Blob...'}</p>
-                      <p className="text-xs text-slate-500">Estampando logo dourado com fundo transparente e alta resolução.</p>
+                      <p className="text-sm font-semibold text-amber-300">{devUploadProgress || 'Comprimindo e enviando fotos para o Vercel Blob...'}</p>
+                      <p className="text-xs text-slate-500">Conversão de alta fidelidade para o menor tamanho possível + logo dourado estampado.</p>
                     </div>
                   ) : (
                     <div>
                       <Upload className="w-8 h-8 text-amber-400 mx-auto mb-2" />
                       <p className="text-sm font-semibold text-slate-200">
-                        Clique abaixo para selecionar múltiplas fotos do projeto
+                        Clique abaixo para selecionar fotos do projeto (sem limite de quantidade)
                       </p>
                       <p className="text-xs text-slate-400 mt-1 mb-4">
-                        Suporta JPG, PNG, WebP (até 20 fotos simultâneas)
+                        Suporta JPG, PNG, WebP • Conversão e compressão sem perda de qualidade + CDN Vercel Blob
                       </p>
                       <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer shadow-md transition-all">
                         <Upload className="w-4 h-4" />
-                        <span>Selecionar Múltiplas Fotos</span>
+                        <span>Selecionar Fotos (Sem Limite)</span>
                         <input
                           type="file"
                           multiple
@@ -1982,6 +2219,161 @@ export const AdminPage: React.FC<AdminPageProps> = ({ navigate }) => {
                 ) : (
                   <p className="text-xs text-slate-500 italic text-center py-2">
                     Nenhuma foto adicionada ainda. Selecione fotos acima para preencher a galeria do empreendimento.
+                  </p>
+                )}
+              </div>
+
+              {/* VERCEL BLOB VIDEO UPLOAD & MULTI-VIDEO SECTION */}
+              <div className="p-5 rounded-2xl bg-slate-900/80 border border-amber-500/30 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="font-cinzel text-base font-bold text-amber-300 flex items-center gap-2">
+                      <Film className="w-5 h-5 text-amber-400" />
+                      <span>Vídeos e Tours do Empreendimento ({devForm.videos?.length || (devForm.videoUrl ? 1 : 0)} vídeos)</span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Envie arquivos de vídeo (MP4, WebM, MOV até 120MB) armazenados diretamente no Vercel Blob ou adicione links de tour virtual.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Video Upload Box */}
+                <div className="border-2 border-dashed border-amber-500/30 hover:border-amber-500/60 rounded-xl p-5 text-center transition-colors bg-black/20">
+                  {devVideoUploading ? (
+                    <div className="py-4 space-y-2">
+                      <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto" />
+                      <p className="text-sm font-semibold text-amber-300">{devVideoProgress || 'Fazendo upload do vídeo para o Vercel Blob...'}</p>
+                      <p className="text-xs text-slate-500">Armazenamento em nuvem permanente via Vercel Blob com streaming rápido.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <Video className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-200">
+                        Selecione vídeos do empreendimento (sem limite)
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1 mb-3">
+                        Suporta arquivos MP4, WebM, QuickTime MOV (armazenamento seguro no Vercel Blob)
+                      </p>
+                      <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer shadow-md transition-all">
+                        <Upload className="w-4 h-4" />
+                        <span>Upload de Vídeos (Vercel Blob)</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="video/*,video/mp4,video/webm,video/quicktime"
+                          className="hidden"
+                          onChange={handleDevVideosUpload}
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Add Video by URL (YouTube, Vimeo, Vercel Blob URL) */}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Ou cole a URL de um vídeo (YouTube, Vimeo ou MP4 direto)..."
+                    value={manualDevVideoUrl}
+                    onChange={(e) => setManualDevVideoUrl(e.target.value)}
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddManualDevVideo}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200"
+                  >
+                    Adicionar Vídeo
+                  </button>
+                </div>
+
+                {/* Videos List / Grid */}
+                {devForm.videos && devForm.videos.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    {devForm.videos.map((vidUrl, idx) => {
+                      const isPrimary = devForm.videoUrl === vidUrl || (idx === 0 && !devForm.videoUrl);
+                      const isDirectVideo = vidUrl.match(/\.(mp4|webm|mov|ogg)($|\?)/i) || vidUrl.startsWith('data:video') || vidUrl.includes('blob.vercel-storage.com');
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`relative rounded-xl overflow-hidden border bg-slate-950 p-3 space-y-2 ${
+                            isPrimary ? 'border-amber-500 shadow-md shadow-amber-500/20' : 'border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1.5 text-xs text-amber-300 font-semibold truncate max-w-[200px]">
+                              <Film className="w-3.5 h-3.5" />
+                              <span>Vídeo {idx + 1}</span>
+                            </span>
+                            {isPrimary ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500 text-slate-950">
+                                Principal
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleSetPrimaryDevVideo(idx)}
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white/10 hover:bg-amber-500 hover:text-slate-950 text-slate-300 transition-colors"
+                              >
+                                Tornar Principal
+                              </button>
+                            )}
+                          </div>
+
+                          {isDirectVideo ? (
+                            <video
+                              src={vidUrl}
+                              controls
+                              preload="metadata"
+                              className="w-full h-36 object-cover rounded-lg bg-black"
+                            />
+                          ) : (
+                            <div className="w-full h-36 rounded-lg bg-black/60 flex flex-col items-center justify-center p-3 text-center border border-white/10">
+                              <Play className="w-8 h-8 text-amber-400 mb-2" />
+                              <a
+                                href={vidUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-amber-300 hover:underline truncate max-w-full"
+                              >
+                                {vidUrl}
+                              </a>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[10px] text-slate-400 truncate max-w-[200px]">
+                              {vidUrl.includes('vercel-storage.com') ? 'Vercel Blob CDN' : 'Link Externo'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDevVideo(idx)}
+                              className="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs flex items-center gap-1"
+                              title="Remover vídeo"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Remover</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : devForm.videoUrl ? (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 flex items-center justify-between">
+                    <span className="text-xs text-amber-300 truncate max-w-md">{devForm.videoUrl}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDevForm({ ...devForm, videoUrl: '', videos: [] })}
+                      className="text-xs text-rose-400 hover:underline"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic text-center py-2">
+                    Nenhum vídeo adicionado ainda. Faça upload de vídeos MP4 para o Vercel Blob ou cole links acima.
                   </p>
                 )}
               </div>

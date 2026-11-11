@@ -51,6 +51,8 @@
         "typologies": { "type": "string", "maxLength": 200 },
         "features": { "type": "array" },
         "images": { "type": "array" },
+        "videoUrl": { "type": "string", "maxLength": 500 },
+        "videos": { "type": "array" },
         "status": { "type": "string", "enum": ["lancamento", "em_obras", "pronto"] },
         "featured": { "type": "boolean" },
         "published": { "type": "boolean" },

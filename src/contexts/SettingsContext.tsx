@@ -47,17 +47,49 @@ interface SettingsContextType {
   updateLeadStatus: (id: string, status: Lead['status'], notes?: string) => Promise<void>;
 }
 
+const STORAGE_KEYS = {
+  SETTINGS: 'savio_site_settings_v3',
+  PROPERTIES: 'savio_properties_v3',
+  DEVELOPMENTS: 'savio_developments_v3',
+  LANDING_PAGES: 'savio_landing_pages_v3',
+  LEADS: 'savio_leads_v3',
+  SEEDED: 'savio_firestore_seeded_v3',
+};
+
+function readStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(fallback) ? Array.isArray(parsed) : parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    // ignore parsing errors
+  }
+  return fallback;
+}
+
+function writeStorage<T>(key: string, data: T) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    // ignore quota exceptions
+  }
+}
+
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<SiteSettings>(initialSiteSettings);
-  const [properties, setProperties] = useState<Property[]>(initialProperties);
-  const [developments, setDevelopments] = useState<Development[]>(initialDevelopments);
-  const [landingPages, setLandingPages] = useState<LandingPage[]>(initialLandingPages);
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [settings, setSettings] = useState<SiteSettings>(() => readStorage(STORAGE_KEYS.SETTINGS, initialSiteSettings));
+  const [properties, setProperties] = useState<Property[]>(() => readStorage(STORAGE_KEYS.PROPERTIES, initialProperties));
+  const [developments, setDevelopments] = useState<Development[]>(() => readStorage(STORAGE_KEYS.DEVELOPMENTS, initialDevelopments));
+  const [landingPages, setLandingPages] = useState<LandingPage[]>(() => readStorage(STORAGE_KEYS.LANDING_PAGES, initialLandingPages));
+  const [leads, setLeads] = useState<Lead[]>(() => readStorage(STORAGE_KEYS.LEADS, []));
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Auto-initialize Firestore and sync collections
+  // Auto-initialize Firestore and sync collections in real-time
   useEffect(() => {
     let unsubscribeSettings: () => void = () => {};
     let unsubscribeProperties: () => void = () => {};
@@ -67,7 +99,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const initializeData = async () => {
       try {
-        let isAlreadySeeded = false;
+        let isAlreadySeeded = localStorage.getItem(STORAGE_KEYS.SEEDED) === 'true';
 
         // 1. Settings
         try {
@@ -77,8 +109,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           if (!settingsSnap.exists()) {
             await setDoc(settingsRef, initialSiteSettings);
             setSettings(initialSiteSettings);
+            writeStorage(STORAGE_KEYS.SETTINGS, initialSiteSettings);
           } else {
             isAlreadySeeded = true;
+            localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
             const raw = settingsSnap.data() as SiteSettings;
             const officialLogo = 'https://i.postimg.cc/RhPjD53T/Logo-Imobiliario-Dourado-Luxuoso.png';
             const officialAvatar = 'https://i.postimg.cc/V6v7JDFN/Selfie-no-escritorio-da-Imoveis-com-Savio.png';
@@ -93,6 +127,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               heroBadge: (raw.heroBadge || initialSiteSettings.heroBadge).replace(/curador(ia|a)/gi, 'Seleção Exclusiva'),
             };
             setSettings(cleaned);
+            writeStorage(STORAGE_KEYS.SETTINGS, cleaned);
 
             if (isOldLogo || !raw.avatarUrl || raw.avatarUrl.includes('unsplash') || raw.avatarUrl.includes('Whats-App-Image') || raw.bio?.match(/curador/i) || raw.heroSubtitle?.match(/curador/i) || raw.heroBadge?.match(/curador/i)) {
               setDoc(settingsRef, cleaned, { merge: true }).catch(() => {});
@@ -115,13 +150,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 heroBadge: (raw.heroBadge || initialSiteSettings.heroBadge).replace(/curador(ia|a)/gi, 'Seleção Exclusiva'),
               };
               setSettings(cleaned);
+              writeStorage(STORAGE_KEYS.SETTINGS, cleaned);
             }
           }, (err) => {
             console.warn('Settings listener fallback:', err?.message || err);
           });
         } catch (settingsErr) {
-          console.warn('Settings read/seed fallback to local defaults:', settingsErr);
-          setSettings(initialSiteSettings);
+          console.warn('Settings read/seed fallback to local storage:', settingsErr);
         }
 
         // 2. Properties
@@ -134,22 +169,25 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               await setDoc(doc(db, 'properties', p.id), p);
             }
             setProperties(initialProperties);
-          } else {
+            writeStorage(STORAGE_KEYS.PROPERTIES, initialProperties);
+            localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
+          } else if (!propSnap.empty) {
             const list: Property[] = [];
             propSnap.forEach(d => list.push({ id: d.id, ...d.data() } as Property));
             setProperties(list);
+            writeStorage(STORAGE_KEYS.PROPERTIES, list);
           }
 
           unsubscribeProperties = onSnapshot(propCol, (snap) => {
             const list: Property[] = [];
             snap.forEach(d => list.push({ id: d.id, ...d.data() } as Property));
             setProperties(list);
+            writeStorage(STORAGE_KEYS.PROPERTIES, list);
           }, (err) => {
             console.warn('Properties listener fallback:', err?.message || err);
           });
         } catch (propErr) {
-          console.warn('Properties fallback to local defaults:', propErr);
-          setProperties(initialProperties);
+          console.warn('Properties fallback to local cache:', propErr);
         }
 
         // 3. Developments
@@ -162,49 +200,52 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               await setDoc(doc(db, 'developments', d.id), d);
             }
             setDevelopments(initialDevelopments);
-          } else {
+            writeStorage(STORAGE_KEYS.DEVELOPMENTS, initialDevelopments);
+            localStorage.setItem(STORAGE_KEYS.SEEDED, 'true');
+          } else if (!devSnap.empty) {
             const list: Development[] = [];
             devSnap.forEach(d => list.push({ id: d.id, ...d.data() } as Development));
             setDevelopments(list);
+            writeStorage(STORAGE_KEYS.DEVELOPMENTS, list);
           }
 
           unsubscribeDevelopments = onSnapshot(devCol, (snap) => {
             const list: Development[] = [];
             snap.forEach(d => list.push({ id: d.id, ...d.data() } as Development));
             setDevelopments(list);
+            writeStorage(STORAGE_KEYS.DEVELOPMENTS, list);
           }, (err) => {
             console.warn('Developments listener fallback:', err?.message || err);
           });
         } catch (devErr) {
-          console.warn('Developments fallback to local defaults:', devErr);
-          setDevelopments(initialDevelopments);
+          console.warn('Developments fallback to local cache:', devErr);
         }
 
         // 4. Landing Pages
         try {
           const lpCol = collection(db, 'landingPages');
           const lpSnap = await getDocs(lpCol);
-          if (lpSnap.empty) {
+          if (lpSnap.empty && !isAlreadySeeded) {
             for (const lp of initialLandingPages) {
               await setDoc(doc(db, 'landingPages', lp.id), lp);
             }
-          } else {
+            writeStorage(STORAGE_KEYS.LANDING_PAGES, initialLandingPages);
+          } else if (!lpSnap.empty) {
             const list: LandingPage[] = [];
             lpSnap.forEach(d => list.push({ id: d.id, ...d.data() } as LandingPage));
-            if (list.length > 0) setLandingPages(list);
+            setLandingPages(list);
+            writeStorage(STORAGE_KEYS.LANDING_PAGES, list);
           }
           unsubscribeLandingPages = onSnapshot(lpCol, (snap) => {
-            if (!snap.empty) {
-              const list: LandingPage[] = [];
-              snap.forEach(d => list.push({ id: d.id, ...d.data() } as LandingPage));
-              setLandingPages(list);
-            }
+            const list: LandingPage[] = [];
+            snap.forEach(d => list.push({ id: d.id, ...d.data() } as LandingPage));
+            setLandingPages(list);
+            writeStorage(STORAGE_KEYS.LANDING_PAGES, list);
           }, (err) => {
             console.warn('Landing pages listener fallback:', err?.message || err);
           });
         } catch (lpErr) {
-          console.warn('Landing pages fallback to local defaults:', lpErr);
-          setLandingPages(initialLandingPages);
+          console.warn('Landing pages fallback to local cache:', lpErr);
         }
 
         // 5. Leads
@@ -215,6 +256,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             snap.forEach(d => list.push({ id: d.id, ...d.data() } as Lead));
             list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setLeads(list);
+            writeStorage(STORAGE_KEYS.LEADS, list);
           }, (err) => {
             console.warn('Leads listener notice (admin only):', err?.message || err);
           });
@@ -243,6 +285,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const updateSettings = async (newSettings: Partial<SiteSettings>) => {
     const merged = { ...settings, ...newSettings, updatedAt: new Date().toISOString() };
     setSettings(merged);
+    writeStorage(STORAGE_KEYS.SETTINGS, merged);
     try {
       await setDoc(doc(db, 'settings', 'global'), merged, { merge: true });
     } catch (error) {
@@ -259,19 +302,26 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createdAt: now,
       updatedAt: now,
     };
+    setProperties(prev => {
+      const list = [newProperty, ...prev];
+      writeStorage(STORAGE_KEYS.PROPERTIES, list);
+      return list;
+    });
     try {
       await setDoc(doc(db, 'properties', id), newProperty);
-      setProperties(prev => [newProperty, ...prev]);
-      return id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `properties/${id}`);
-      return id;
     }
+    return id;
   };
 
   const updateProperty = async (id: string, updates: Partial<Property>) => {
     const updated = { ...updates, updatedAt: new Date().toISOString() };
-    setProperties(prev => prev.map(p => p.id === id ? { ...p, ...updated } : p));
+    setProperties(prev => {
+      const list = prev.map(p => p.id === id ? { ...p, ...updated } : p);
+      writeStorage(STORAGE_KEYS.PROPERTIES, list);
+      return list;
+    });
     try {
       await updateDoc(doc(db, 'properties', id), updated);
     } catch (error) {
@@ -280,7 +330,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const deleteProperty = async (id: string) => {
-    setProperties(prev => prev.filter(p => p.id !== id));
+    setProperties(prev => {
+      const list = prev.filter(p => p.id !== id);
+      writeStorage(STORAGE_KEYS.PROPERTIES, list);
+      return list;
+    });
     try {
       await deleteDoc(doc(db, 'properties', id));
     } catch (error) {
@@ -303,8 +357,16 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updatedAt: now,
       published: false,
     };
-    await setDoc(doc(db, 'properties', newId), duplicated);
-    setProperties(prev => [duplicated, ...prev]);
+    setProperties(prev => {
+      const list = [duplicated, ...prev];
+      writeStorage(STORAGE_KEYS.PROPERTIES, list);
+      return list;
+    });
+    try {
+      await setDoc(doc(db, 'properties', newId), duplicated);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `properties/${newId}`);
+    }
     return newId;
   };
 
@@ -317,7 +379,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createdAt: now,
       updatedAt: now,
     };
-    setDevelopments(prev => [newDev, ...prev]);
+    setDevelopments(prev => {
+      const list = [newDev, ...prev];
+      writeStorage(STORAGE_KEYS.DEVELOPMENTS, list);
+      return list;
+    });
     try {
       await setDoc(doc(db, 'developments', id), newDev);
     } catch (error) {
@@ -328,7 +394,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const updateDevelopment = async (id: string, updates: Partial<Development>) => {
     const updated = { ...updates, updatedAt: new Date().toISOString() };
-    setDevelopments(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+    setDevelopments(prev => {
+      const list = prev.map(d => d.id === id ? { ...d, ...updated } : d);
+      writeStorage(STORAGE_KEYS.DEVELOPMENTS, list);
+      return list;
+    });
     try {
       await setDoc(doc(db, 'developments', id), updated, { merge: true });
     } catch (error) {
@@ -337,7 +407,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const deleteDevelopment = async (id: string) => {
-    setDevelopments(prev => prev.filter(d => d.id !== id));
+    setDevelopments(prev => {
+      const list = prev.filter(d => d.id !== id);
+      writeStorage(STORAGE_KEYS.DEVELOPMENTS, list);
+      return list;
+    });
     try {
       await deleteDoc(doc(db, 'developments', id));
     } catch (error) {

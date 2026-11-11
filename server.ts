@@ -15,11 +15,11 @@ const port = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Setup multer in-memory storage for handling file uploads
+// Setup multer in-memory storage for handling file uploads (supports images, large videos, PDFs up to 120MB)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 30 * 1024 * 1024, // 30MB limit
+    fileSize: 120 * 1024 * 1024, // 120MB limit for high-res photos and videos
   },
 });
 
@@ -33,21 +33,24 @@ const ai = new GoogleGenAI({
   },
 });
 
-// 1. Vercel Blob Upload Endpoint (Single File)
+// 1. Vercel Blob Upload Endpoint (Single File - Photos, Videos, Documents)
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const token = process.env.BLOB_READ_WRITE_TOKEN || 'vercel_blob_rw_SgNAy9Ymf4TxrU5m_TXI7k0fHzE00wAz7xjK6fPvBZRQtG9';
     const cleanOriginalName = (req.file.originalname || 'upload.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filename = `imoveis-savio/${Date.now()}-${cleanOriginalName}`;
+    const isVideo = req.file.mimetype?.startsWith('video/');
+    const isImage = req.file.mimetype?.startsWith('image/');
+    const folder = isVideo ? 'videos' : isImage ? 'fotos' : 'anexos';
+    const filename = `imoveis-savio/${folder}/${Date.now()}-${cleanOriginalName}`;
 
     if (token) {
       const blob = await put(filename, req.file.buffer, {
         access: 'public',
-        contentType: req.file.mimetype || 'image/jpeg',
+        contentType: req.file.mimetype || (isVideo ? 'video/mp4' : 'image/jpeg'),
         token,
       });
 
@@ -56,16 +59,20 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         url: blob.url,
         pathname: blob.pathname,
         provider: 'vercel-blob',
+        fileType: isVideo ? 'video' : isImage ? 'image' : 'document',
+        size: req.file.size,
       });
     }
 
     // In local dev without BLOB_READ_WRITE_TOKEN, return data URL so upload never fails
-    const base64 = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+    const base64 = `data:${req.file.mimetype || (isVideo ? 'video/mp4' : 'image/jpeg')};base64,${req.file.buffer.toString('base64')}`;
     return res.json({
       success: true,
       url: base64,
       provider: 'local-fallback',
-      message: 'Arquivo processado localmente. Configure BLOB_READ_WRITE_TOKEN para CDN em nuvem.',
+      fileType: isVideo ? 'video' : isImage ? 'image' : 'document',
+      size: req.file.size,
+      message: 'Arquivo processado com sucesso. Configure BLOB_READ_WRITE_TOKEN para CDN em nuvem permanente.',
     });
   } catch (error: any) {
     console.error('Vercel Blob upload failure:', error);
@@ -75,30 +82,33 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// 2. Vercel Blob Multiple Upload Endpoint
-app.post('/api/upload/multiple', upload.array('files', 20), async (req, res) => {
+// 2. Vercel Blob Multiple Upload Endpoint (Up to 100 files simultaneously)
+app.post('/api/upload/multiple', upload.array('files', 100), async (req, res) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const token = process.env.BLOB_READ_WRITE_TOKEN || 'vercel_blob_rw_SgNAy9Ymf4TxrU5m_TXI7k0fHzE00wAz7xjK6fPvBZRQtG9';
     const uploadedUrls: string[] = [];
 
     for (const f of files) {
       const cleanOriginalName = (f.originalname || 'upload.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filename = `imoveis-savio/${Date.now()}-${cleanOriginalName}`;
+      const isVideo = f.mimetype?.startsWith('video/');
+      const isImage = f.mimetype?.startsWith('image/');
+      const folder = isVideo ? 'videos' : isImage ? 'fotos' : 'anexos';
+      const filename = `imoveis-savio/${folder}/${Date.now()}-${cleanOriginalName}`;
 
       if (token) {
         const blob = await put(filename, f.buffer, {
           access: 'public',
-          contentType: f.mimetype || 'image/jpeg',
+          contentType: f.mimetype || (isVideo ? 'video/mp4' : 'image/jpeg'),
           token,
         });
         uploadedUrls.push(blob.url);
       } else {
-        const base64 = `data:${f.mimetype || 'image/jpeg'};base64,${f.buffer.toString('base64')}`;
+        const base64 = `data:${f.mimetype || (isVideo ? 'video/mp4' : 'image/jpeg')};base64,${f.buffer.toString('base64')}`;
         uploadedUrls.push(base64);
       }
     }
@@ -111,7 +121,7 @@ app.post('/api/upload/multiple', upload.array('files', 20), async (req, res) => 
   } catch (error: any) {
     console.error('Multiple upload failure:', error);
     return res.status(500).json({
-      error: error?.message || 'Falha no upload múltiplo',
+      error: error?.message || 'Falha no upload múltiplo para o Vercel Blob',
     });
   }
 });

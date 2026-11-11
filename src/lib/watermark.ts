@@ -6,10 +6,16 @@
 export interface WatermarkOptions {
   position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'center';
   opacity?: number;
-  scale?: number; // percentage of image width, e.g. 0.20 (20%)
+  scale?: number; // percentage of image width, e.g. 0.22 (22%)
   includeText?: boolean;
+  maxDimension?: number; // Max width or height (e.g. 2560 for 4K/retina)
+  quality?: number; // 0.88 visually lossless compression
 }
 
+/**
+ * Compresses an image to the smallest possible size without perceptible loss of quality,
+ * and stamps the official golden luxury logo as watermark.
+ */
 export async function applyWatermark(
   imageSource: File | Blob | string,
   logoUrl: string = 'https://i.postimg.cc/RhPjD53T/Logo-Imobiliario-Dourado-Luxuoso.png',
@@ -20,6 +26,8 @@ export async function applyWatermark(
     opacity = 0.88,
     scale = 0.22,
     includeText = true,
+    maxDimension = 2560,
+    quality = 0.88,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -37,23 +45,43 @@ export async function applyWatermark(
 
     baseImg.onload = async () => {
       try {
+        const origWidth = baseImg.naturalWidth || baseImg.width;
+        const origHeight = baseImg.naturalHeight || baseImg.height;
+
+        // Calculate optimal dimensions with smart downscaling
+        let targetWidth = origWidth;
+        let targetHeight = origHeight;
+
+        if (origWidth > maxDimension || origHeight > maxDimension) {
+          if (origWidth >= origHeight) {
+            targetWidth = maxDimension;
+            targetHeight = Math.round((origHeight / origWidth) * maxDimension);
+          } else {
+            targetHeight = maxDimension;
+            targetWidth = Math.round((origWidth / origHeight) * maxDimension);
+          }
+        }
+
         const canvas = document.createElement('canvas');
-        canvas.width = baseImg.naturalWidth || baseImg.width;
-        canvas.height = baseImg.naturalHeight || baseImg.height;
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           throw new Error('Canvas 2D context not available');
         }
 
-        // Draw original photo in full resolution
-        ctx.drawImage(baseImg, 0, 0);
+        // Enable high-quality bicubic smoothing
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // Draw photo at target resolution
+        ctx.drawImage(baseImg, 0, 0, targetWidth, targetHeight);
 
         // 2. Load Logo (try direct, if CORS fails, use proxy or fallback)
         const logoImg = new Image();
         logoImg.crossOrigin = 'anonymous';
 
-        // Load logo with fallback
         await new Promise<void>((resolveLogo) => {
           logoImg.onload = () => resolveLogo();
           logoImg.onerror = () => {
@@ -73,7 +101,7 @@ export async function applyWatermark(
           ctx.save();
           ctx.globalAlpha = opacity;
 
-          // Compute size
+          // Compute size relative to canvas
           const targetLogoWidth = Math.max(160, Math.min(canvas.width * scale, 420));
           const logoAspect = (logoImg.naturalHeight || 1) / (logoImg.naturalWidth || 1);
           const targetLogoHeight = targetLogoWidth * logoAspect;
@@ -95,7 +123,6 @@ export async function applyWatermark(
           }
 
           // Subtle protective background plate for contrast
-          const platePadding = Math.round(targetLogoWidth * 0.06);
           ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
           ctx.shadowBlur = 12;
           ctx.shadowOffsetX = 0;
@@ -105,7 +132,7 @@ export async function applyWatermark(
 
           // Subtle signature text
           if (includeText) {
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
             ctx.shadowBlur = 6;
             ctx.fillStyle = '#fef3c7'; // warm amber gold
             const fontSize = Math.max(11, Math.round(targetLogoWidth * 0.075));
@@ -121,7 +148,7 @@ export async function applyWatermark(
           ctx.restore();
         }
 
-        // Export as High-Quality WebP/JPEG File
+        // Export as High-Quality Optimized JPEG/WebP File
         canvas.toBlob(
           (blob) => {
             if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
@@ -145,7 +172,7 @@ export async function applyWatermark(
             resolve(watermarkedFile);
           },
           'image/jpeg',
-          0.92
+          quality
         );
       } catch (err) {
         if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
@@ -153,9 +180,26 @@ export async function applyWatermark(
       }
     };
 
-    baseImg.onerror = (err) => {
+    baseImg.onerror = () => {
       if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
       reject(new Error('Failed to load base image for watermarking'));
     };
+  });
+}
+
+/**
+ * Standalone image compression without watermark.
+ */
+export async function compressImage(
+  imageSource: File | Blob | string,
+  maxDimension: number = 2560,
+  quality: number = 0.88
+): Promise<File> {
+  return applyWatermark(imageSource, '', {
+    scale: 0,
+    opacity: 0,
+    includeText: false,
+    maxDimension,
+    quality,
   });
 }
